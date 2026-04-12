@@ -1,6 +1,7 @@
 package org.fluxy.starter.web;
 
 import lombok.RequiredArgsConstructor;
+import org.fluxy.starter.dto.AddStepByNameToFlowRequest;
 import org.fluxy.starter.dto.AddStepToFlowRequest;
 import org.fluxy.starter.dto.CreateFluxyFlowRequest;
 import org.fluxy.starter.dto.FlowStepDto;
@@ -17,7 +18,8 @@ import java.util.UUID;
  * Controlador REST para la gestión de {@code FluxyFlow}.
  *
  * <p>Expone endpoints bajo {@code /fluxy/flows} para listar, buscar, crear
- * y eliminar flows, así como gestionar los steps que componen cada flow.</p>
+ * y eliminar flows, así como gestionar los steps que componen cada flow.
+ * Todos los endpoints de acción admiten identificación por ID o por nombre.</p>
  */
 @RestController
 @RequestMapping("/fluxy/flows")
@@ -76,9 +78,11 @@ public class FluxyFlowController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    // ── Agregar step ──────────────────────────────────────────────────────────
+
     /**
      * POST /fluxy/flows/{id}/steps
-     * Agrega un step a un flow existente.
+     * Agrega un step a un flow existente (flow por ID, step por ID).
      */
     @PostMapping("/{id}/steps")
     public ResponseEntity<FlowStepDto> addStep(
@@ -89,8 +93,22 @@ public class FluxyFlowController {
     }
 
     /**
+     * POST /fluxy/flows/name/{name}/steps
+     * Agrega un step a un flow existente (flow por nombre, step por nombre).
+     */
+    @PostMapping("/name/{name}/steps")
+    public ResponseEntity<FlowStepDto> addStepByName(
+            @PathVariable String name,
+            @RequestBody AddStepByNameToFlowRequest request) {
+        FlowStepDto result = fluxyFlowService.addStepByName(name, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
+    // ── Eliminar step de flow ─────────────────────────────────────────────────
+
+    /**
      * DELETE /fluxy/flows/{flowId}/steps/{stepId}
-     * Elimina un step de un flow.
+     * Elimina un step de un flow (por IDs).
      */
     @DeleteMapping("/{flowId}/steps/{stepId}")
     public ResponseEntity<Void> removeStep(
@@ -101,6 +119,20 @@ public class FluxyFlowController {
     }
 
     /**
+     * DELETE /fluxy/flows/name/{flowName}/steps/name/{stepName}
+     * Elimina un step de un flow (por nombres).
+     */
+    @DeleteMapping("/name/{flowName}/steps/name/{stepName}")
+    public ResponseEntity<Void> removeStepByName(
+            @PathVariable String flowName,
+            @PathVariable String stepName) {
+        fluxyFlowService.removeStepByName(flowName, stepName);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Eliminar flow ─────────────────────────────────────────────────────────
+
+    /**
      * DELETE /fluxy/flows/{id}
      * Elimina un flow por su ID.
      */
@@ -109,5 +141,14 @@ public class FluxyFlowController {
         fluxyFlowService.delete(id);
         return ResponseEntity.noContent().build();
     }
-}
 
+    /**
+     * DELETE /fluxy/flows/name/{name}
+     * Elimina un flow por su nombre.
+     */
+    @DeleteMapping("/name/{name}")
+    public ResponseEntity<Void> deleteByName(@PathVariable String name) {
+        fluxyFlowService.deleteByName(name);
+        return ResponseEntity.noContent().build();
+    }
+}

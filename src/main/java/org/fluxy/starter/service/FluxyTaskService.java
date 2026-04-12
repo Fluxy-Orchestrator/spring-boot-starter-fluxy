@@ -81,6 +81,13 @@ public class FluxyTaskService {
         fluxyTaskRepository.deleteById(id);
     }
 
+    /** Elimina una tarea por su nombre. */
+    public void deleteByName(String name) {
+        FluxyTaskEntity task = fluxyTaskRepository.findByName(name)
+                .orElseThrow(() -> new IllegalArgumentException("Tarea no encontrada con nombre: " + name));
+        fluxyTaskRepository.delete(task);
+    }
+
     // ── Mapeo ────────────────────────────────────────────────────────────────
 
     private FluxyTaskDto toDto(FluxyTaskEntity entity) {

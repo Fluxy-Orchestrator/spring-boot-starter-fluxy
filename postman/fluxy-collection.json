@@ -951,6 +951,44 @@
               "path": ["fluxy", "execution", "tasks", "enviar-email", "execute"]
             }
           }
+        },
+        {
+          "name": "Ejecutar task a demanda por nombre y versión",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Task ejecutada exitosamente con versión específica', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.taskName).to.eql('enviar-email');",
+                  "    pm.expect(jsonData.status).to.eql('FINISHED');",
+                  "    pm.expect(jsonData.result).to.be.oneOf(['SUCCESS', 'FAILURE']);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"default\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"destinatario@example.com\" },\n    { \"name\": \"asunto\", \"value\": \"Confirmación de pedido\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-999\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/execution/tasks/enviar-email/v/1/execute",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "execution", "tasks", "enviar-email", "v", "1", "execute"]
+            }
+          }
         }
       ]
     },
@@ -1147,6 +1185,390 @@
               "raw": "{{baseUrl}}/fluxy/tasks/{{taskInventarioId}}",
               "host": ["{{baseUrl}}"],
               "path": ["fluxy", "tasks", "{{taskInventarioId}}"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6 — By Name (flujo completo sin UUIDs)",
+      "description": "Escenario alternativo usando SOLO nombres en lugar de UUIDs. Demuestra los endpoints /name/{name}. Requiere que las tasks, steps y flow hayan sido creados previamente (carpetas 1-3).",
+      "item": [
+        {
+          "name": "Agregar task enviar-email → step-notificacion (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Task asignada correctamente por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.taskName).to.eql('enviar-email');",
+                  "    pm.expect(jsonData.taskOrder).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taskName\": \"enviar-email\",\n  \"order\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/steps/name/step-notificacion/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "steps", "name", "step-notificacion", "tasks"]
+            }
+          }
+        },
+        {
+          "name": "Agregar task generar-pdf → step-documentos (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Task asignada correctamente por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.taskName).to.eql('generar-pdf');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"taskName\": \"generar-pdf\",\n  \"order\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/steps/name/step-documentos/tasks",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "steps", "name", "step-documentos", "tasks"]
+            }
+          }
+        },
+        {
+          "name": "Agregar step-notificacion → flow-pedido (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Step asignado al flow por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.stepName).to.eql('step-notificacion');",
+                  "    pm.expect(jsonData.order).to.eql(1);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stepName\": \"step-notificacion\",\n  \"order\": 1\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/flows/name/flow-pedido/steps",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "flows", "name", "flow-pedido", "steps"]
+            }
+          }
+        },
+        {
+          "name": "Agregar step-documentos → flow-pedido (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 201 Created', function () {",
+                  "    pm.response.to.have.status(201);",
+                  "});",
+                  "",
+                  "pm.test('Step asignado al flow por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.stepName).to.eql('step-documentos');",
+                  "    pm.expect(jsonData.order).to.eql(2);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"stepName\": \"step-documentos\",\n  \"order\": 2\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/flows/name/flow-pedido/steps",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "flows", "name", "flow-pedido", "steps"]
+            }
+          }
+        },
+        {
+          "name": "Inicializar flow-pedido (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Flow inicializado por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.flowName).to.eql('flow-pedido');",
+                  "    jsonData.steps.forEach(function (step) {",
+                  "        pm.expect(step.stepStatus).to.eql('PENDING');",
+                  "    });",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"cliente@example.com\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/execution/flows/name/flow-pedido/initialize",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "execution", "flows", "name", "flow-pedido", "initialize"]
+            }
+          }
+        },
+        {
+          "name": "Procesar flow-pedido (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Flow procesado por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.flowName).to.eql('flow-pedido');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"cliente@example.com\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/execution/flows/name/flow-pedido/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "execution", "flows", "name", "flow-pedido", "process"]
+            }
+          }
+        },
+        {
+          "name": "Procesar step a demanda (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 200 OK', function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "",
+                  "pm.test('Step procesado por nombre', function () {",
+                  "    var jsonData = pm.response.json();",
+                  "    pm.expect(jsonData.stepName).to.eql('step-notificacion');",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"default\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"test@example.com\" }\n  ],\n  \"references\": []\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/execution/steps/name/step-notificacion/process",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "execution", "steps", "name", "step-notificacion", "process"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar step del flow (por nombres)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/flows/name/flow-pedido/steps/name/step-notificacion",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "flows", "name", "flow-pedido", "steps", "name", "step-notificacion"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar task de step (por nombres)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/steps/name/step-documentos/tasks/name/generar-pdf",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "steps", "name", "step-documentos", "tasks", "name", "generar-pdf"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar flow (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/flows/name/flow-pedido",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "flows", "name", "flow-pedido"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar step (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/steps/name/step-notificacion",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "steps", "name", "step-notificacion"]
+            }
+          }
+        },
+        {
+          "name": "Eliminar task (por nombre)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.test('Status 204 No Content', function () {",
+                  "    pm.response.to.have.status(204);",
+                  "});"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "DELETE",
+            "url": {
+              "raw": "{{baseUrl}}/fluxy/tasks/name/enviar-email",
+              "host": ["{{baseUrl}}"],
+              "path": ["fluxy", "tasks", "name", "enviar-email"]
             }
           }
         }

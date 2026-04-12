@@ -1,6 +1,7 @@
 package org.fluxy.starter.web;
 
 import lombok.RequiredArgsConstructor;
+import org.fluxy.starter.dto.AddTaskByNameToStepRequest;
 import org.fluxy.starter.dto.AddTaskToStepRequest;
 import org.fluxy.starter.dto.CreateFluxyStepRequest;
 import org.fluxy.starter.dto.FluxyStepDto;
@@ -17,7 +18,8 @@ import java.util.UUID;
  * Controlador REST para la gestión de {@code FluxyStep}.
  *
  * <p>Expone endpoints bajo {@code /fluxy/steps} para listar, buscar, crear
- * y eliminar steps, así como gestionar las tareas asignadas a cada step.</p>
+ * y eliminar steps, así como gestionar las tareas asignadas a cada step.
+ * Todos los endpoints de acción admiten identificación por ID o por nombre.</p>
  */
 @RestController
 @RequestMapping("/fluxy/steps")
@@ -67,9 +69,11 @@ public class FluxyStepController {
         return ResponseEntity.status(HttpStatus.CREATED).body(created);
     }
 
+    // ── Agregar task ──────────────────────────────────────────────────────────
+
     /**
      * POST /fluxy/steps/{id}/tasks
-     * Agrega una tarea a un step existente.
+     * Agrega una tarea a un step existente (step por ID, task por ID).
      */
     @PostMapping("/{id}/tasks")
     public ResponseEntity<StepTaskDto> addTask(
@@ -80,8 +84,22 @@ public class FluxyStepController {
     }
 
     /**
+     * POST /fluxy/steps/name/{name}/tasks
+     * Agrega una tarea a un step existente (step por nombre, task por nombre).
+     */
+    @PostMapping("/name/{name}/tasks")
+    public ResponseEntity<StepTaskDto> addTaskByName(
+            @PathVariable String name,
+            @RequestBody AddTaskByNameToStepRequest request) {
+        StepTaskDto result = fluxyStepService.addTaskByName(name, request);
+        return ResponseEntity.status(HttpStatus.CREATED).body(result);
+    }
+
+    // ── Eliminar task de step ─────────────────────────────────────────────────
+
+    /**
      * DELETE /fluxy/steps/{stepId}/tasks/{taskId}
-     * Elimina una tarea de un step.
+     * Elimina una tarea de un step (por IDs).
      */
     @DeleteMapping("/{stepId}/tasks/{taskId}")
     public ResponseEntity<Void> removeTask(
@@ -92,6 +110,20 @@ public class FluxyStepController {
     }
 
     /**
+     * DELETE /fluxy/steps/name/{stepName}/tasks/name/{taskName}
+     * Elimina una tarea de un step (por nombres).
+     */
+    @DeleteMapping("/name/{stepName}/tasks/name/{taskName}")
+    public ResponseEntity<Void> removeTaskByName(
+            @PathVariable String stepName,
+            @PathVariable String taskName) {
+        fluxyStepService.removeTaskByName(stepName, taskName);
+        return ResponseEntity.noContent().build();
+    }
+
+    // ── Eliminar step ─────────────────────────────────────────────────────────
+
+    /**
      * DELETE /fluxy/steps/{id}
      * Elimina un step por su ID.
      */
@@ -100,5 +132,14 @@ public class FluxyStepController {
         fluxyStepService.delete(id);
         return ResponseEntity.noContent().build();
     }
-}
 
+    /**
+     * DELETE /fluxy/steps/name/{name}
+     * Elimina un step por su nombre.
+     */
+    @DeleteMapping("/name/{name}")
+    public ResponseEntity<Void> deleteByName(@PathVariable String name) {
+        fluxyStepService.deleteByName(name);
+        return ResponseEntity.noContent().build();
+    }
+}

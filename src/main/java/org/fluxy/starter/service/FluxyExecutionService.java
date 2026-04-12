@@ -164,11 +164,42 @@ public class FluxyExecutionService {
         return toStepResult(stepEntity, refreshedTasks);
     }
 
+    /**
+     * Inicializa un flow por nombre.
+     * Resuelve el nombre a ID y delega a {@link #initializeFlow(UUID, ExecutionContextRequest)}.
+     */
+    public FlowExecutionResultDto initializeFlowByName(String flowName, ExecutionContextRequest request) {
+        FluxyFlowEntity flowEntity = flowRepository.findByName(flowName)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
+        return initializeFlow(flowEntity.getId(), request);
+    }
+
+    /**
+     * Procesa un flow por nombre.
+     * Resuelve el nombre a ID y delega a {@link #processFlow(UUID, ExecutionContextRequest)}.
+     */
+    public FlowExecutionResultDto processFlowByName(String flowName, ExecutionContextRequest request) {
+        FluxyFlowEntity flowEntity = flowRepository.findByName(flowName)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
+        return processFlow(flowEntity.getId(), request);
+    }
+
+    /**
+     * Procesa un step por nombre.
+     * Resuelve el nombre a ID y delega a {@link #processStep(UUID, ExecutionContextRequest)}.
+     */
+    public StepExecutionResultDto processStepByName(String stepName, ExecutionContextRequest request) {
+        FluxyStepEntity stepEntity = stepRepository.findByName(stepName)
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepName));
+        return processStep(stepEntity.getId(), request);
+    }
+
     // ── Task execution ──────────────────────────────────────────────────────
 
     /**
      * Ejecuta una tarea específica a demanda, buscándola por nombre en el
-     * {@link FluxyTaskRegistry}.
+     * {@link FluxyTaskRegistry}. Si existen varias versiones registradas con
+     * el mismo nombre, se utiliza la de <b>mayor versión</b>.
      *
      * <p>La ejecución se delega al {@link TaskExecutorService} del core, que
      * publica un evento {@link org.fluxy.core.model.FluxyEvent} en el bus
@@ -180,13 +211,36 @@ public class FluxyExecutionService {
      * @throws IllegalArgumentException si la tarea no existe en el registro
      */
     public TaskExecutionResultDto executeTask(String taskName, ExecutionContextRequest request) {
-        FluxyTask fluxyTask = taskRegistry.findByName(taskName)
+        FluxyTask fluxyTask = taskRegistry.findLatestByName(taskName)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Tarea no encontrada en el registro: " + taskName));
 
         ExecutionContext ctx = toExecutionContext(request);
 
-        log.info("[Fluxy] Ejecutando tarea '{}' a demanda.", taskName);
+        log.info("[Fluxy] Ejecutando tarea '{}' (v{}) a demanda.", taskName, fluxyTask.getVersion());
+        TaskResult result = taskExecutorService.executeTask(fluxyTask, ctx);
+
+        return new TaskExecutionResultDto(taskName, TaskStatus.FINISHED.name(), result.name());
+    }
+
+    /**
+     * Ejecuta una tarea específica a demanda, buscándola por nombre <b>y
+     * versión exacta</b> en el {@link FluxyTaskRegistry}.
+     *
+     * @param taskName nombre de la tarea a ejecutar
+     * @param version  versión exacta requerida
+     * @param request  contexto de ejecución con variables y referencias
+     * @return resultado de la ejecución
+     * @throws IllegalArgumentException si no existe una tarea con ese nombre y versión
+     */
+    public TaskExecutionResultDto executeTask(String taskName, int version, ExecutionContextRequest request) {
+        FluxyTask fluxyTask = taskRegistry.findByNameAndVersion(taskName, version)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Tarea no encontrada en el registro: '%s' v%d".formatted(taskName, version)));
+
+        ExecutionContext ctx = toExecutionContext(request);
+
+        log.info("[Fluxy] Ejecutando tarea '{}' (v{}) a demanda.", taskName, version);
         TaskResult result = taskExecutorService.executeTask(fluxyTask, ctx);
 
         return new TaskExecutionResultDto(taskName, TaskStatus.FINISHED.name(), result.name());
@@ -212,10 +266,11 @@ public class FluxyExecutionService {
                                 "No hay tareas pendientes en el step: " + stepEntity.getName())));
 
         String taskName = currentTask.getTask().getName();
-        FluxyTask fluxyTask = taskRegistry.findByName(taskName)
+        int taskVersion = currentTask.getTask().getVersion();
+        FluxyTask fluxyTask = taskRegistry.findByNameAndVersion(taskName, taskVersion)
                 .orElseThrow(() -> new IllegalArgumentException(
-                        "Tarea '" + taskName + "' no encontrada en el registro. " +
-                        "Asegúrese de que el bean @Task esté en el contexto de Spring."));
+                        "Tarea '%s' v%d no encontrada en el registro. ".formatted(taskName, taskVersion) +
+                        "Asegúrese de que el bean @Task esté en el contexto de Spring con la versión correcta."));
 
         currentTask.setStatus(TaskStatus.RUNNING);
         stepTaskRepository.save(currentTask);

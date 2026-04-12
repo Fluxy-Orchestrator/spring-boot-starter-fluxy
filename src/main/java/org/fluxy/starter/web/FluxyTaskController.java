@@ -15,7 +15,8 @@ import java.util.UUID;
  * Controlador REST para la gestión de {@code FluxyTask}.
  *
  * <p>Expone endpoints bajo {@code /fluxy/tasks} para listar, buscar,
- * crear y eliminar tareas registradas en la base de datos.</p>
+ * crear y eliminar tareas registradas en la base de datos.
+ * Los endpoints de eliminación admiten identificación por ID o por nombre.</p>
  */
 @RestController
 @RequestMapping("/fluxy/tasks")
@@ -74,5 +75,14 @@ public class FluxyTaskController {
         fluxyTaskService.delete(id);
         return ResponseEntity.noContent().build();
     }
-}
 
+    /**
+     * DELETE /fluxy/tasks/name/{name}
+     * Elimina una tarea por su nombre.
+     */
+    @DeleteMapping("/name/{name}")
+    public ResponseEntity<Void> deleteByName(@PathVariable String name) {
+        fluxyTaskService.deleteByName(name);
+        return ResponseEntity.noContent().build();
+    }
+}

@@ -8,6 +8,7 @@ import org.fluxy.spring.persistence.entity.StepTaskEntity;
 import org.fluxy.spring.persistence.repository.FluxyStepRepository;
 import org.fluxy.spring.persistence.repository.FluxyTaskRepository;
 import org.fluxy.spring.persistence.repository.StepTaskRepository;
+import org.fluxy.starter.dto.AddTaskByNameToStepRequest;
 import org.fluxy.starter.dto.AddTaskToStepRequest;
 import org.fluxy.starter.dto.CreateFluxyStepRequest;
 import org.fluxy.starter.dto.FluxyStepDto;
@@ -79,6 +80,25 @@ public class FluxyStepService {
     }
 
     /**
+     * Agrega una tarea (identificada por nombre) a un step (identificado por nombre).
+     *
+     * @throws IllegalArgumentException si el step o la tarea no existen
+     */
+    public StepTaskDto addTaskByName(String stepName, AddTaskByNameToStepRequest request) {
+        FluxyStepEntity step = fluxyStepRepository.findByName(stepName)
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepName));
+        FluxyTaskEntity task = fluxyTaskRepository.findByName(request.taskName())
+                .orElseThrow(() -> new IllegalArgumentException("Tarea no encontrada: " + request.taskName()));
+
+        StepTaskEntity stepTask = new StepTaskEntity();
+        stepTask.setStep(step);
+        stepTask.setTask(task);
+        stepTask.setTaskOrder(request.order());
+        stepTask.setStatus(TaskStatus.PENDING);
+        return toStepTaskDto(stepTaskRepository.save(stepTask));
+    }
+
+    /**
      * Elimina una tarea de un step.
      * Si la tarea no está en el step, la operación no hace nada.
      */
@@ -91,12 +111,31 @@ public class FluxyStepService {
                 .ifPresent(stepTaskRepository::delete);
     }
 
+    /**
+     * Elimina una tarea (por nombre) de un step (por nombre).
+     */
+    public void removeTaskByName(String stepName, String taskName) {
+        FluxyStepEntity step = fluxyStepRepository.findByName(stepName)
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepName));
+        stepTaskRepository.findByStep(step).stream()
+                .filter(st -> st.getTask().getName().equals(taskName))
+                .findFirst()
+                .ifPresent(stepTaskRepository::delete);
+    }
+
     /** Elimina un step por su ID. */
     public void delete(UUID id) {
         if (!fluxyStepRepository.existsById(id)) {
             throw new IllegalArgumentException("Step no encontrado con ID: " + id);
         }
         fluxyStepRepository.deleteById(id);
+    }
+
+    /** Elimina un step por su nombre. */
+    public void deleteByName(String name) {
+        FluxyStepEntity step = fluxyStepRepository.findByName(name)
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado con nombre: " + name));
+        fluxyStepRepository.delete(step);
     }
 
     // ── Mapeo ────────────────────────────────────────────────────────────────

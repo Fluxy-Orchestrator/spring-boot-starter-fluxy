@@ -22,7 +22,8 @@ import java.util.UUID;
  *   <li>Ejecutar una tarea específica a demanda por nombre</li>
  * </ul>
  *
- * <p>Las ejecuciones de tareas se delegan al {@code TaskExecutorService} del core,
+ * <p>Todos los endpoints de flow y step admiten identificación por ID o por nombre.
+ * Las ejecuciones de tareas se delegan al {@code TaskExecutorService} del core,
  * que publica eventos en el bus configurado (SPRING, SQS o RABBIT).</p>
  */
 @RestController
@@ -32,15 +33,11 @@ public class FluxyExecutionController {
 
     private final FluxyExecutionService fluxyExecutionService;
 
+    // ── Flow — por ID ─────────────────────────────────────────────────────────
+
     /**
      * POST /fluxy/execution/flows/{id}/initialize
-     *
-     * <p>Inicializa la ejecución de un flow: resetea todos los steps a PENDING
-     * y todas las tareas de cada step a PENDING con resultado null.</p>
-     *
-     * @param id      identificador del flow a inicializar
-     * @param request contexto de ejecución (opcional)
-     * @return estado del flow tras la inicialización
+     * Inicializa un flow por ID.
      */
     @PostMapping("/flows/{id}/initialize")
     public ResponseEntity<FlowExecutionResultDto> initializeFlow(
@@ -52,14 +49,7 @@ public class FluxyExecutionController {
 
     /**
      * POST /fluxy/execution/flows/{id}/process
-     *
-     * <p>Procesa el siguiente paso en un flow: encuentra el step en ejecución
-     * (o el siguiente pendiente) y ejecuta su siguiente tarea pendiente.
-     * Cuando todas las tareas de un step terminan, el step pasa a FINISHED.</p>
-     *
-     * @param id      identificador del flow a procesar
-     * @param request contexto de ejecución con variables y referencias
-     * @return estado actualizado del flow
+     * Procesa el siguiente step de un flow por ID.
      */
     @PostMapping("/flows/{id}/process")
     public ResponseEntity<FlowExecutionResultDto> processFlow(
@@ -69,16 +59,37 @@ public class FluxyExecutionController {
         return ResponseEntity.ok(result);
     }
 
+    // ── Flow — por nombre ─────────────────────────────────────────────────────
+
+    /**
+     * POST /fluxy/execution/flows/name/{name}/initialize
+     * Inicializa un flow por nombre.
+     */
+    @PostMapping("/flows/name/{name}/initialize")
+    public ResponseEntity<FlowExecutionResultDto> initializeFlowByName(
+            @PathVariable String name,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        FlowExecutionResultDto result = fluxyExecutionService.initializeFlowByName(name, request);
+        return ResponseEntity.ok(result);
+    }
+
+    /**
+     * POST /fluxy/execution/flows/name/{name}/process
+     * Procesa el siguiente step de un flow por nombre.
+     */
+    @PostMapping("/flows/name/{name}/process")
+    public ResponseEntity<FlowExecutionResultDto> processFlowByName(
+            @PathVariable String name,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        FlowExecutionResultDto result = fluxyExecutionService.processFlowByName(name, request);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── Step — por ID ─────────────────────────────────────────────────────────
+
     /**
      * POST /fluxy/execution/steps/{id}/process
-     *
-     * <p>Procesa un step específico a demanda: encuentra la siguiente tarea
-     * pendiente y la ejecuta. No requiere que el step pertenezca a un flow
-     * en ejecución.</p>
-     *
-     * @param id      identificador del step a procesar
-     * @param request contexto de ejecución con variables y referencias
-     * @return estado actualizado del step
+     * Procesa un step por ID.
      */
     @PostMapping("/steps/{id}/process")
     public ResponseEntity<StepExecutionResultDto> processStep(
@@ -88,16 +99,26 @@ public class FluxyExecutionController {
         return ResponseEntity.ok(result);
     }
 
+    // ── Step — por nombre ─────────────────────────────────────────────────────
+
+    /**
+     * POST /fluxy/execution/steps/name/{name}/process
+     * Procesa un step por nombre.
+     */
+    @PostMapping("/steps/name/{name}/process")
+    public ResponseEntity<StepExecutionResultDto> processStepByName(
+            @PathVariable String name,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        StepExecutionResultDto result = fluxyExecutionService.processStepByName(name, request);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── Task — por nombre ─────────────────────────────────────────────────────
+
     /**
      * POST /fluxy/execution/tasks/{name}/execute
-     *
-     * <p>Ejecuta una tarea específica a demanda, buscándola por nombre en el
-     * registro de tareas ({@code FluxyTaskRegistry}). La tarea debe existir
-     * como bean {@code @Task} en el contexto de Spring.</p>
-     *
-     * @param name    nombre de la tarea a ejecutar
-     * @param request contexto de ejecución con variables y referencias
-     * @return resultado de la ejecución
+     * Ejecuta una tarea por nombre. Si existen varias versiones con el mismo
+     * nombre, se utiliza la de <b>mayor versión</b> disponible en el registro.
      */
     @PostMapping("/tasks/{name}/execute")
     public ResponseEntity<TaskExecutionResultDto> executeTask(
@@ -106,5 +127,19 @@ public class FluxyExecutionController {
         TaskExecutionResultDto result = fluxyExecutionService.executeTask(name, request);
         return ResponseEntity.ok(result);
     }
-}
 
+    // ── Task — por nombre y versión ────────────────────────────────────────────
+
+    /**
+     * POST /fluxy/execution/tasks/{name}/v/{version}/execute
+     * Ejecuta una tarea por nombre y versión exacta.
+     */
+    @PostMapping("/tasks/{name}/v/{version}/execute")
+    public ResponseEntity<TaskExecutionResultDto> executeTaskVersioned(
+            @PathVariable String name,
+            @PathVariable int version,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        TaskExecutionResultDto result = fluxyExecutionService.executeTask(name, version, request);
+        return ResponseEntity.ok(result);
+    }
+}

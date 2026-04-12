@@ -8,6 +8,7 @@ import org.fluxy.spring.persistence.entity.FluxyStepEntity;
 import org.fluxy.spring.persistence.repository.FlowStepRepository;
 import org.fluxy.spring.persistence.repository.FluxyFlowRepository;
 import org.fluxy.spring.persistence.repository.FluxyStepRepository;
+import org.fluxy.starter.dto.AddStepByNameToFlowRequest;
 import org.fluxy.starter.dto.AddStepToFlowRequest;
 import org.fluxy.starter.dto.CreateFluxyFlowRequest;
 import org.fluxy.starter.dto.FlowStepDto;
@@ -82,6 +83,25 @@ public class FluxyFlowService {
     }
 
     /**
+     * Agrega un step (identificado por nombre) a un flow (identificado por nombre).
+     *
+     * @throws IllegalArgumentException si el flow o el step no existen
+     */
+    public FlowStepDto addStepByName(String flowName, AddStepByNameToFlowRequest request) {
+        FluxyFlowEntity flow = fluxyFlowRepository.findByName(flowName)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
+        FluxyStepEntity step = fluxyStepRepository.findByName(request.stepName())
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + request.stepName()));
+
+        FlowStepEntity flowStep = new FlowStepEntity();
+        flowStep.setFlow(flow);
+        flowStep.setStep(step);
+        flowStep.setStepOrder(request.order());
+        flowStep.setStepStatus(StepStatus.PENDING);
+        return toFlowStepDto(flowStepRepository.save(flowStep));
+    }
+
+    /**
      * Elimina un step de un flow.
      * Si el step no pertenece al flow, la operación no hace nada.
      */
@@ -94,12 +114,31 @@ public class FluxyFlowService {
                 .ifPresent(flowStepRepository::delete);
     }
 
+    /**
+     * Elimina un step (por nombre) de un flow (por nombre).
+     */
+    public void removeStepByName(String flowName, String stepName) {
+        FluxyFlowEntity flow = fluxyFlowRepository.findByName(flowName)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
+        flowStepRepository.findByFlow(flow).stream()
+                .filter(fs -> fs.getStep().getName().equals(stepName))
+                .findFirst()
+                .ifPresent(flowStepRepository::delete);
+    }
+
     /** Elimina un flow por su ID. */
     public void delete(UUID id) {
         if (!fluxyFlowRepository.existsById(id)) {
             throw new IllegalArgumentException("Flow no encontrado con ID: " + id);
         }
         fluxyFlowRepository.deleteById(id);
+    }
+
+    /** Elimina un flow por su nombre. */
+    public void deleteByName(String name) {
+        FluxyFlowEntity flow = fluxyFlowRepository.findByName(name)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado con nombre: " + name));
+        fluxyFlowRepository.delete(flow);
     }
 
     // ── Mapeo ────────────────────────────────────────────────────────────────

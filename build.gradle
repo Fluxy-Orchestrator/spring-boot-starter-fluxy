@@ -72,7 +72,7 @@ dependencies {
     compileOnly "org.springframework.amqp:spring-rabbit:${springAmqpVersion}"
 
     // Jackson Databind - para serialización/deserialización JSON en el event bus (SQS/Rabbit)
-    compileOnly "tools.jackson:jackson-databind:${jacksonVersion}"
+    compileOnly "tools.jackson.core:jackson-databind:${jacksonVersion}"
 
     // SLF4J API - para logging con @Slf4j (Lombok)
     compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"

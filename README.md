@@ -478,9 +478,10 @@ eventBus.publish(new FluxyEvent<>(source, payload, context));
 | `GET` | `/fluxy/tasks/{id}` | Busca por ID |
 | `GET` | `/fluxy/tasks/name/{name}` | Busca por nombre |
 | `POST` | `/fluxy/tasks` | Crea una tarea manualmente |
-| `DELETE` | `/fluxy/tasks/{id}` | Elimina una tarea |
+| `DELETE` | `/fluxy/tasks/{id}` | Elimina una tarea por ID |
+| `DELETE` | `/fluxy/tasks/name/{name}` | Elimina una tarea por nombre |
 
-**POST body:** `{ "name": "mi-tarea" }`
+**POST body:** `{ "name": "mi-tarea", "version": 1, "description": "..." }`
 
 ### FluxyStep — `/fluxy/steps`
 
@@ -490,11 +491,16 @@ eventBus.publish(new FluxyEvent<>(source, payload, context));
 | `GET` | `/fluxy/steps/{id}` | Busca por ID |
 | `GET` | `/fluxy/steps/name/{name}` | Busca por nombre |
 | `POST` | `/fluxy/steps` | Crea un step |
-| `POST` | `/fluxy/steps/{id}/tasks` | Agrega una tarea al step |
-| `DELETE` | `/fluxy/steps/{stepId}/tasks/{taskId}` | Elimina tarea del step |
-| `DELETE` | `/fluxy/steps/{id}` | Elimina un step |
+| `POST` | `/fluxy/steps/{id}/tasks` | Agrega una tarea al step (por IDs) |
+| `POST` | `/fluxy/steps/name/{name}/tasks` | Agrega una tarea al step (por nombres) |
+| `DELETE` | `/fluxy/steps/{stepId}/tasks/{taskId}` | Elimina tarea del step (por IDs) |
+| `DELETE` | `/fluxy/steps/name/{stepName}/tasks/name/{taskName}` | Elimina tarea del step (por nombres) |
+| `DELETE` | `/fluxy/steps/{id}` | Elimina un step por ID |
+| `DELETE` | `/fluxy/steps/name/{name}` | Elimina un step por nombre |
 
 **POST /fluxy/steps/{id}/tasks body:** `{ "taskId": "uuid", "order": 1 }`
+
+**POST /fluxy/steps/name/{name}/tasks body:** `{ "taskName": "enviar-email", "order": 1 }`
 
 ### FluxyFlow — `/fluxy/flows`
 
@@ -505,13 +511,18 @@ eventBus.publish(new FluxyEvent<>(source, payload, context));
 | `GET` | `/fluxy/flows/name/{name}` | Busca por nombre |
 | `GET` | `/fluxy/flows/type/{type}` | Filtra por tipo |
 | `POST` | `/fluxy/flows` | Crea un flow |
-| `POST` | `/fluxy/flows/{id}/steps` | Agrega un step al flow |
-| `DELETE` | `/fluxy/flows/{flowId}/steps/{stepId}` | Elimina step del flow |
-| `DELETE` | `/fluxy/flows/{id}` | Elimina un flow |
+| `POST` | `/fluxy/flows/{id}/steps` | Agrega un step al flow (por IDs) |
+| `POST` | `/fluxy/flows/name/{name}/steps` | Agrega un step al flow (por nombres) |
+| `DELETE` | `/fluxy/flows/{flowId}/steps/{stepId}` | Elimina step del flow (por IDs) |
+| `DELETE` | `/fluxy/flows/name/{flowName}/steps/name/{stepName}` | Elimina step del flow (por nombres) |
+| `DELETE` | `/fluxy/flows/{id}` | Elimina un flow por ID |
+| `DELETE` | `/fluxy/flows/name/{name}` | Elimina un flow por nombre |
 
 **POST /fluxy/flows body:** `{ "name": "mi-flow", "type": "BATCH", "description": "..." }`
 
 **POST /fluxy/flows/{id}/steps body:** `{ "stepId": "uuid", "order": 1 }`
+
+**POST /fluxy/flows/name/{name}/steps body:** `{ "stepName": "step-notificacion", "order": 1 }`
 
 ### Ejecución — `/fluxy/execution`
 
@@ -519,10 +530,13 @@ Endpoints para la ejecución a demanda de flows, steps y tasks. Cada ejecución 
 
 | Método | URL | Descripción |
 |--------|-----|-------------|
-| `POST` | `/fluxy/execution/flows/{id}/initialize` | Inicializa un flow (resetea todos los steps/tasks a PENDING) |
-| `POST` | `/fluxy/execution/flows/{id}/process` | Procesa el siguiente step del flow (ejecuta su siguiente tarea pendiente) |
-| `POST` | `/fluxy/execution/steps/{id}/process` | Procesa un step a demanda (ejecuta su siguiente tarea pendiente) |
-| `POST` | `/fluxy/execution/tasks/{name}/execute` | Ejecuta una tarea específica por nombre |
+| `POST` | `/fluxy/execution/flows/{id}/initialize` | Inicializa un flow por ID |
+| `POST` | `/fluxy/execution/flows/name/{name}/initialize` | Inicializa un flow por nombre |
+| `POST` | `/fluxy/execution/flows/{id}/process` | Procesa el siguiente step (por ID) |
+| `POST` | `/fluxy/execution/flows/name/{name}/process` | Procesa el siguiente step (por nombre) |
+| `POST` | `/fluxy/execution/steps/{id}/process` | Procesa un step a demanda (por ID) |
+| `POST` | `/fluxy/execution/steps/name/{name}/process` | Procesa un step a demanda (por nombre) |
+| `POST` | `/fluxy/execution/tasks/{name}/execute` | Ejecuta una tarea por nombre |
 
 **Body (todos los endpoints):** `ExecutionContextRequest` (opcional)
 ```json
