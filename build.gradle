@@ -1,0 +1,108 @@
+plugins {
+    id 'java-library'
+    id 'maven-publish'
+}
+
+group = 'org.fluxy'
+version = '1.0.0'
+
+ext {
+    springBootVersion   = '4.0.5'
+    springVersion       = '7.0.6'
+    springDataVersion   = '3.2.1'
+    hibernateVersion    = '6.4.4.Final'
+    hikariVersion       = '6.3.0'
+    lombokVersion       = '1.18.44'
+    fluxySpringVersion  = '1.0.0'
+    slf4jVersion        = '2.0.16'
+    springCloudAwsSqsVersion = '3.3.1'
+    springAmqpVersion   = '3.2.4'
+    jacksonVersion      = '3.1.0'
+}
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(25)
+    }
+}
+
+configurations {
+    compileOnly {
+        extendsFrom annotationProcessor
+    }
+}
+
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven {
+        url = uri("https://oss.sonatype.org/content/repositories/snapshots")
+    }
+}
+
+dependencies {
+    // Fluxy Spring (transitivamente incluye fluxy-core + entidades JPA + repositorios)
+    api "org.fluxy:fluxy-spring:${fluxySpringVersion}"
+
+    // Spring Boot AutoConfiguration - infraestructura de autoconfiguración
+    implementation "org.springframework.boot:spring-boot-autoconfigure:${springBootVersion}"
+
+    // Spring Boot context event (ApplicationReadyEvent)
+    implementation "org.springframework:spring-context:${springVersion}"
+
+    // Spring Web MVC - para los controladores REST (condicionalmente activados)
+    compileOnly "org.springframework:spring-webmvc:${springVersion}"
+
+    // Spring Data JPA - para @EnableJpaRepositories en la autoconfiguración de datos
+    compileOnly "org.springframework.data:spring-data-jpa:${springDataVersion}"
+
+    // Spring ORM - para LocalContainerEntityManagerFactoryBean (datasource dedicado)
+    compileOnly "org.springframework:spring-orm:${springVersion}"
+
+    // Hibernate ORM - para HibernateJpaVendorAdapter (datasource dedicado)
+    compileOnly "org.hibernate.orm:hibernate-core:${hibernateVersion}"
+
+    // HikariCP - para pool de conexiones del datasource dedicado
+    compileOnly "com.zaxxer:HikariCP:${hikariVersion}"
+
+    // Spring Cloud AWS SQS - para la implementación del event bus con Amazon SQS
+    compileOnly "io.awspring.cloud:spring-cloud-aws-sqs:${springCloudAwsSqsVersion}"
+
+    // Spring AMQP / RabbitMQ - para la implementación del event bus con RabbitMQ
+    compileOnly "org.springframework.amqp:spring-rabbit:${springAmqpVersion}"
+
+    // Jackson Databind - para serialización/deserialización JSON en el event bus (SQS/Rabbit)
+    compileOnly "tools.jackson:jackson-databind:${jacksonVersion}"
+
+    // SLF4J API - para logging con @Slf4j (Lombok)
+    compileOnly "org.slf4j:slf4j-api:${slf4jVersion}"
+
+    // Lombok
+    compileOnly "org.projectlombok:lombok:${lombokVersion}"
+    annotationProcessor "org.projectlombok:lombok:${lombokVersion}"
+
+    // Spring Boot Configuration Processor - genera metadata para autocompletado en IDE
+    annotationProcessor "org.springframework.boot:spring-boot-configuration-processor:${springBootVersion}"
+
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.10.0'
+    testImplementation 'org.mockito:mockito-core:5.12.0'
+    testImplementation 'org.mockito:mockito-junit-jupiter:5.12.0'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.named('test') {
+    useJUnitPlatform()
+}
+
+publishing {
+    publications {
+        maven(MavenPublication) {
+            from components.java
+        }
+    }
+}
+
+
+
+

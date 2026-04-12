@@ -1,0 +1,264 @@
+{
+  "groups": [
+    {
+      "name": "fluxy.datasource",
+      "type": "org.fluxy.starter.properties.FluxyDataSourceProperties",
+      "description": "Configuración del datasource dedicado para Fluxy. Cuando fluxy.datasource.url está definido, el starter crea un DataSource, EntityManagerFactory y TransactionManager independientes del datasource primario de la aplicación."
+    },
+    {
+      "name": "fluxy.datasource.hikari",
+      "type": "org.fluxy.starter.properties.FluxyDataSourceProperties$Hikari",
+      "description": "Configuración del pool de conexiones HikariCP para el datasource dedicado de Fluxy."
+    },
+    {
+      "name": "fluxy.jpa",
+      "type": "org.fluxy.starter.properties.FluxyJpaProperties",
+      "description": "Configuración JPA/Hibernate para el datasource dedicado de Fluxy. Solo tiene efecto cuando fluxy.datasource.url está definido."
+    },
+    {
+      "name": "fluxy.jpa.hibernate",
+      "type": "org.fluxy.starter.properties.FluxyJpaProperties$Hibernate",
+      "description": "Configuración específica de Hibernate para el datasource dedicado de Fluxy."
+    },
+    {
+      "name": "fluxy.task.registration",
+      "type": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties",
+      "description": "Configuración del registro y validación de tareas @Task al arrancar la aplicación."
+    },
+    {
+      "name": "fluxy.task.registration.cleanup-stale",
+      "type": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties$CleanupStale",
+      "description": "Configuración de detección y manejo de tareas obsoletas en la base de datos (tareas sin clase @Task correspondiente en el código)."
+    },
+    {
+      "name": "fluxy.eventbus",
+      "type": "org.fluxy.starter.properties.FluxyEventBusProperties",
+      "description": "Configuración del bus de eventos de Fluxy. Permite seleccionar la implementación (SPRING, SQS, RABBIT) y sus propiedades específicas."
+    },
+    {
+      "name": "fluxy.eventbus.sqs",
+      "type": "org.fluxy.starter.properties.FluxyEventBusProperties$Sqs",
+      "description": "Configuración de Amazon SQS para el bus de eventos de Fluxy. Solo tiene efecto cuando fluxy.eventbus.type = SQS."
+    },
+    {
+      "name": "fluxy.eventbus.rabbit",
+      "type": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit",
+      "description": "Configuración de RabbitMQ para el bus de eventos de Fluxy. Solo tiene efecto cuando fluxy.eventbus.type = RABBIT."
+    }
+  ],
+  "properties": [
+    {
+      "name": "fluxy.datasource.url",
+      "type": "java.lang.String",
+      "description": "JDBC URL del datasource dedicado de Fluxy. Cuando se define, se crea una infraestructura JPA completamente independiente.",
+      "sourceType": "org.fluxy.starter.properties.FluxyDataSourceProperties"
+    },
+    {
+      "name": "fluxy.datasource.driver-class-name",
+      "type": "java.lang.String",
+      "description": "Clase del driver JDBC. Se auto-detecta a partir de la URL si no se especifica.",
+      "sourceType": "org.fluxy.starter.properties.FluxyDataSourceProperties"
+    },
+    {
+      "name": "fluxy.datasource.username",
+      "type": "java.lang.String",
+      "description": "Usuario del datasource dedicado de Fluxy.",
+      "sourceType": "org.fluxy.starter.properties.FluxyDataSourceProperties"
+    },
+    {
+      "name": "fluxy.datasource.password",
+      "type": "java.lang.String",
+      "description": "Contraseña del datasource dedicado de Fluxy.",
+      "sourceType": "org.fluxy.starter.properties.FluxyDataSourceProperties"
+    },
+    {
+      "name": "fluxy.datasource.hikari.pool-name",
+      "type": "java.lang.String",
+      "description": "Nombre del pool HikariCP.",
+      "defaultValue": "FluxyHikariPool"
+    },
+    {
+      "name": "fluxy.datasource.hikari.maximum-pool-size",
+      "type": "java.lang.Integer",
+      "description": "Número máximo de conexiones en el pool.",
+      "defaultValue": 10
+    },
+    {
+      "name": "fluxy.datasource.hikari.minimum-idle",
+      "type": "java.lang.Integer",
+      "description": "Número mínimo de conexiones inactivas.",
+      "defaultValue": 2
+    },
+    {
+      "name": "fluxy.datasource.hikari.connection-timeout",
+      "type": "java.lang.Long",
+      "description": "Tiempo máximo (ms) para obtener una conexión del pool.",
+      "defaultValue": 30000
+    },
+    {
+      "name": "fluxy.datasource.hikari.idle-timeout",
+      "type": "java.lang.Long",
+      "description": "Tiempo máximo (ms) que una conexión puede estar inactiva.",
+      "defaultValue": 600000
+    },
+    {
+      "name": "fluxy.datasource.hikari.max-lifetime",
+      "type": "java.lang.Long",
+      "description": "Tiempo máximo de vida (ms) de una conexión en el pool.",
+      "defaultValue": 1800000
+    },
+    {
+      "name": "fluxy.jpa.show-sql",
+      "type": "java.lang.Boolean",
+      "description": "Mostrar sentencias SQL generadas por Hibernate en la consola.",
+      "defaultValue": false
+    },
+    {
+      "name": "fluxy.jpa.generate-ddl",
+      "type": "java.lang.Boolean",
+      "description": "Permitir la generación automática de DDL (esquema).",
+      "defaultValue": false
+    },
+    {
+      "name": "fluxy.jpa.database-platform",
+      "type": "java.lang.String",
+      "description": "Dialecto de la base de datos (fully qualified class name). Ejemplo: org.hibernate.dialect.PostgreSQLDialect"
+    },
+    {
+      "name": "fluxy.jpa.hibernate.ddl-auto",
+      "type": "java.lang.String",
+      "description": "Estrategia de generación de esquema de Hibernate: none, validate, update, create, create-drop.",
+      "defaultValue": "none"
+    },
+    {
+      "name": "fluxy.task.registration.auto-register",
+      "type": "java.lang.Boolean",
+      "description": "Activa el auto-registro en BD de los beans @Task que extiendan FluxyTask. Cuando es false, las tareas se instancian en el contexto de Spring pero NO se persisten en BD. Las validaciones de consistencia (cleanup-stale y validate-steps) siguen ejecutándose de forma independiente.",
+      "defaultValue": true,
+      "sourceType": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties"
+    },
+    {
+      "name": "fluxy.task.registration.cleanup-stale.enabled",
+      "type": "java.lang.Boolean",
+      "description": "Activa la detección de tareas huérfanas: tareas que existen en la base de datos pero cuyo @Task correspondiente ya no se encuentra en el código.",
+      "defaultValue": false,
+      "sourceType": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties$CleanupStale"
+    },
+    {
+      "name": "fluxy.task.registration.cleanup-stale.mode",
+      "type": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties$StaleHandlingMode",
+      "description": "Modo de manejo cuando se detectan tareas huérfanas: WARN emite un log warning; FAIL lanza StaleTaskException deteniendo el arranque.",
+      "defaultValue": "WARN",
+      "sourceType": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties$CleanupStale"
+    },
+    {
+      "name": "fluxy.task.registration.validate-steps",
+      "type": "java.lang.Boolean",
+      "description": "Activa la validación de versiones de tareas en los steps de la base de datos. Verifica que cada tarea referenciada por un step exista con la versión correcta. Emite WARN si hay versión más nueva en código, lanza StepTaskVersionMismatchException si la tarea no existe o tiene versión anterior.",
+      "defaultValue": false,
+      "sourceType": "org.fluxy.starter.properties.FluxyTaskRegistrationProperties"
+    },
+    {
+      "name": "fluxy.eventbus.type",
+      "type": "org.fluxy.starter.properties.FluxyEventBusProperties$EventBusType",
+      "description": "Tipo de implementación del bus de eventos: SPRING (Spring Application Events, por defecto), SQS (Amazon SQS), RABBIT (RabbitMQ).",
+      "defaultValue": "SPRING",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties"
+    },
+    {
+      "name": "fluxy.eventbus.sqs.queue-url",
+      "type": "java.lang.String",
+      "description": "URL completa de la cola SQS donde se publican y consumen los eventos de Fluxy. Ejemplo: https://sqs.us-east-1.amazonaws.com/123456789012/fluxy-events",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Sqs"
+    },
+    {
+      "name": "fluxy.eventbus.sqs.region",
+      "type": "java.lang.String",
+      "description": "Región de AWS donde reside la cola SQS. Ejemplo: us-east-1",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Sqs"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.host",
+      "type": "java.lang.String",
+      "description": "Host del servidor RabbitMQ.",
+      "defaultValue": "localhost",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.port",
+      "type": "java.lang.Integer",
+      "description": "Puerto AMQP del servidor RabbitMQ.",
+      "defaultValue": 5672,
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.username",
+      "type": "java.lang.String",
+      "description": "Usuario de autenticación en RabbitMQ.",
+      "defaultValue": "guest",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.password",
+      "type": "java.lang.String",
+      "description": "Contraseña de autenticación en RabbitMQ.",
+      "defaultValue": "guest",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.virtual-host",
+      "type": "java.lang.String",
+      "description": "Virtual host de RabbitMQ.",
+      "defaultValue": "/",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.queue",
+      "type": "java.lang.String",
+      "description": "Nombre de la cola donde se consumen los eventos de Fluxy.",
+      "defaultValue": "fluxy-events",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.exchange",
+      "type": "java.lang.String",
+      "description": "Exchange donde se publican los eventos de Fluxy.",
+      "defaultValue": "fluxy-exchange",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    },
+    {
+      "name": "fluxy.eventbus.rabbit.routing-key",
+      "type": "java.lang.String",
+      "description": "Routing key utilizada para publicar eventos y enlazar la cola al exchange.",
+      "defaultValue": "fluxy.events",
+      "sourceType": "org.fluxy.starter.properties.FluxyEventBusProperties$Rabbit"
+    }
+  ],
+  "hints": [
+    {
+      "name": "fluxy.jpa.hibernate.ddl-auto",
+      "values": [
+        { "value": "none", "description": "No realiza cambios en el esquema (recomendado para producción)." },
+        { "value": "validate", "description": "Valida que el esquema coincida con las entidades." },
+        { "value": "update", "description": "Actualiza el esquema según las entidades (útil en desarrollo)." },
+        { "value": "create", "description": "Crea el esquema al iniciar, destruyendo datos previos." },
+        { "value": "create-drop", "description": "Crea el esquema al iniciar y lo elimina al cerrar." }
+      ]
+    },
+    {
+      "name": "fluxy.task.registration.cleanup-stale.mode",
+      "values": [
+        { "value": "WARN", "description": "Emite un log de nivel WARN por cada tarea huérfana detectada." },
+        { "value": "FAIL", "description": "Lanza StaleTaskException impidiendo el arranque de la aplicación." }
+      ]
+    },
+    {
+      "name": "fluxy.eventbus.type",
+      "values": [
+        { "value": "SPRING", "description": "Usa Spring Application Events — comunicación local en la misma JVM (por defecto)." },
+        { "value": "SQS", "description": "Usa Amazon SQS — comunicación distribuida vía cola SQS." },
+        { "value": "RABBIT", "description": "Usa RabbitMQ — comunicación distribuida vía AMQP." }
+      ]
+    }
+  ]
+}

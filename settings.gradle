@@ -1,0 +1,5 @@
+rootProject.name = 'spring-boot-starter-fluxy'
+
+includeBuild('../fluxy-core')
+includeBuild('../fluxy-spring')
+
