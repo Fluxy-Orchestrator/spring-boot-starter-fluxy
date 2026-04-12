@@ -13,11 +13,11 @@ ext {
     hibernateVersion    = '6.4.4.Final'
     hikariVersion       = '6.3.0'
     lombokVersion       = '1.18.44'
-    fluxySpringVersion  = '1.0.0'
+    fluxySpringVersion  = '1.1.0'
     slf4jVersion        = '2.0.16'
     springCloudAwsSqsVersion = '3.3.1'
     springAmqpVersion   = '3.2.4'
-    jacksonVersion      = '3.1.0'
+    jacksonVersion      = '3.1.1'
 }
 
 java {
@@ -71,7 +71,7 @@ dependencies {
     // Spring AMQP / RabbitMQ - para la implementación del event bus con RabbitMQ
     compileOnly "org.springframework.amqp:spring-rabbit:${springAmqpVersion}"
 
-    // Jackson Databind - para serialización/deserialización JSON en el event bus (SQS/Rabbit)
+    // Jackson Databind - para serialización/deserialización JSON en el event bus y resolución de paths
     compileOnly "tools.jackson.core:jackson-databind:${jacksonVersion}"
 
     // SLF4J API - para logging con @Slf4j (Lombok)

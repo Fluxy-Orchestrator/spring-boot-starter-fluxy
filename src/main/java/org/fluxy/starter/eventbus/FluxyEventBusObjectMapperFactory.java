@@ -1,8 +1,8 @@
 package org.fluxy.starter.eventbus;
 
-import tools.jackson.annotation.JsonCreator;
-import tools.jackson.annotation.JsonIgnoreProperties;
-import tools.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
 import tools.jackson.databind.json.JsonMapper;
