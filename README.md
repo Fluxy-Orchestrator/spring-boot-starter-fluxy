@@ -332,6 +332,110 @@ INSERT INTO fluxy_task (id, name) VALUES (gen_random_uuid(), 'enviar-email')
 ON CONFLICT DO NOTHING;
 ```
 
+### Más ejemplos de Tasks por código
+
+#### Task con inyección de dependencias Spring
+
+Las tasks de Fluxy son beans de Spring, por lo que puedes inyectar cualquier servicio o repositorio:
+
+```java
+@Task(name = "generar-pdf", description = "Genera un PDF de factura", version = 1)
+public class GenerarPdfTask extends FluxyTask {
+
+    private final PdfService pdfService;
+    private final FacturaRepository facturaRepository;
+
+    public GenerarPdfTask(PdfService pdfService, FacturaRepository facturaRepository) {
+        this.name = "generar-pdf";
+        this.pdfService = pdfService;
+        this.facturaRepository = facturaRepository;
+    }
+
+    @Override
+    public TaskResult execute(ExecutionContext ctx) {
+        String facturaId = ctx.getVariable("facturaId").orElseThrow();
+
+        Factura factura = facturaRepository.findById(UUID.fromString(facturaId))
+                .orElseThrow(() -> new RuntimeException("Factura no encontrada"));
+
+        byte[] pdf = pdfService.generar(factura);
+
+        // Puedes escribir variables de vuelta al contexto
+        ctx.setVariable("pdfGenerado", "true");
+        ctx.setVariable("pdfSize", String.valueOf(pdf.length));
+
+        return TaskResult.SUCCESS;
+    }
+}
+```
+
+#### Task con manejo de errores y resultado condicional
+
+```java
+@Task(name = "notificar-slack", description = "Envía notificación a Slack", version = 2)
+public class NotificarSlackTask extends FluxyTask {
+
+    private final SlackClient slackClient;
+
+    public NotificarSlackTask(SlackClient slackClient) {
+        this.name = "notificar-slack";
+        this.slackClient = slackClient;
+    }
+
+    @Override
+    public TaskResult execute(ExecutionContext ctx) {
+        String canal = ctx.getVariable("slackChannel").orElse("#general");
+        String mensaje = ctx.getVariable("mensaje").orElse("Proceso completado");
+
+        try {
+            slackClient.send(canal, mensaje);
+            return TaskResult.SUCCESS;
+        } catch (SlackApiException e) {
+            // Registrar el error en el contexto para que tasks posteriores puedan leerlo
+            ctx.setVariable("error", e.getMessage());
+            return TaskResult.FAILURE;
+        }
+    }
+}
+```
+
+#### Task con uso de referencias del contexto
+
+Las referencias permiten vincular la ejecución con entidades externas (IDs de orden, cliente, etc.):
+
+```java
+@Task(name = "validar-inventario", description = "Verifica stock disponible", version = 1)
+public class ValidarInventarioTask extends FluxyTask {
+
+    private final InventarioService inventarioService;
+
+    public ValidarInventarioTask(InventarioService inventarioService) {
+        this.name = "validar-inventario";
+        this.inventarioService = inventarioService;
+    }
+
+    @Override
+    public TaskResult execute(ExecutionContext ctx) {
+        // Leer referencias del contexto
+        String orderId = ctx.getReference("orderId").orElseThrow();
+        String productoId = ctx.getVariable("productoId").orElseThrow();
+        int cantidad = Integer.parseInt(ctx.getVariable("cantidad").orElse("1"));
+
+        boolean disponible = inventarioService.verificarStock(productoId, cantidad);
+        ctx.setVariable("stockDisponible", String.valueOf(disponible));
+
+        if (!disponible) {
+            ctx.setVariable("motivoFallo", "Stock insuficiente para producto " + productoId);
+            return TaskResult.FAILURE;
+        }
+
+        return TaskResult.SUCCESS;
+    }
+}
+```
+
+> **Tip:** Todas las tasks se registran automáticamente en BD al arrancar si `fluxy.task.registration.auto-register=true`. También puedes crearlas manualmente vía API REST (ver guía paso a paso más adelante).
+
 ---
 
 ## Bus de eventos — `FluxyEventHandler`
@@ -511,12 +615,589 @@ Map<String, FluxyTask> todas = registry.getAll();
 
 ---
 
+## Guía paso a paso: crear un Flow completo por API REST
+
+Este ejemplo muestra el flujo completo para armar y ejecutar un **flow de procesamiento de pedido** con dos steps y tres tasks, usando exclusivamente los endpoints REST.
+
+> **Prerequisito:** La aplicación Spring Boot con el starter Fluxy corriendo en `http://localhost:8080`.
+
+### Paso 1 — Crear las tasks
+
+Cada task representa una unidad de trabajo. Creamos tres:
+
+**1a. Crear task `enviar-email`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "enviar-email",
+    "version": 1,
+    "description": "Envía un email de notificación al cliente"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+  "name": "enviar-email",
+  "version": 1,
+  "description": "Envía un email de notificación al cliente"
+}
+```
+
+**1b. Crear task `generar-pdf`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "generar-pdf",
+    "version": 1,
+    "description": "Genera el PDF de factura del pedido"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+  "name": "generar-pdf",
+  "version": 1,
+  "description": "Genera el PDF de factura del pedido"
+}
+```
+
+**1c. Crear task `validar-inventario`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "validar-inventario",
+    "version": 1,
+    "description": "Verifica stock disponible para el pedido"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+  "name": "validar-inventario",
+  "version": 1,
+  "description": "Verifica stock disponible para el pedido"
+}
+```
+
+### Paso 2 — Crear los steps
+
+Los steps agrupan tasks que se ejecutan secuencialmente.
+
+**2a. Crear step `step-notificacion`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/steps \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "step-notificacion"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "d4e5f6a7-b8c9-0123-defa-234567890123",
+  "name": "step-notificacion",
+  "tasks": []
+}
+```
+
+**2b. Crear step `step-documentos`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/steps \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "step-documentos"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "e5f6a7b8-c9d0-1234-efab-345678901234",
+  "name": "step-documentos",
+  "tasks": []
+}
+```
+
+### Paso 3 — Asignar tasks a los steps
+
+**3a. Asignar `enviar-email` → `step-notificacion` (orden 1):**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/steps/d4e5f6a7-b8c9-0123-defa-234567890123/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+    "order": 1
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "11111111-1111-1111-1111-111111111111",
+  "taskName": "enviar-email",
+  "taskOrder": 1,
+  "status": "PENDING"
+}
+```
+
+**3b. Asignar `generar-pdf` → `step-documentos` (orden 1):**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/steps/e5f6a7b8-c9d0-1234-efab-345678901234/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskId": "b2c3d4e5-f6a7-8901-bcde-f12345678901",
+    "order": 1
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "22222222-2222-2222-2222-222222222222",
+  "taskName": "generar-pdf",
+  "taskOrder": 1,
+  "status": "PENDING"
+}
+```
+
+**3c. Asignar `validar-inventario` → `step-documentos` (orden 2):**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/steps/e5f6a7b8-c9d0-1234-efab-345678901234/tasks \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskId": "c3d4e5f6-a7b8-9012-cdef-123456789012",
+    "order": 2
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "33333333-3333-3333-3333-333333333333",
+  "taskName": "validar-inventario",
+  "taskOrder": 2,
+  "status": "PENDING"
+}
+```
+
+### Paso 4 — Crear el flow
+
+**4. Crear flow `flow-pedido`:**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/flows \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "flow-pedido",
+    "type": "BATCH",
+    "description": "Flow de procesamiento de pedido: notificación al cliente y generación de documentos"
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "name": "flow-pedido",
+  "type": "BATCH",
+  "description": "Flow de procesamiento de pedido: notificación al cliente y generación de documentos",
+  "steps": []
+}
+```
+
+### Paso 5 — Asignar steps al flow
+
+**5a. Asignar `step-notificacion` al flow (orden 1):**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/steps \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+    "order": 1
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "44444444-4444-4444-4444-444444444444",
+  "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+  "stepName": "step-notificacion",
+  "order": 1,
+  "stepStatus": "PENDING"
+}
+```
+
+**5b. Asignar `step-documentos` al flow (orden 2):**
+
+```bash
+curl -X POST http://localhost:8080/fluxy/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/steps \
+  -H "Content-Type: application/json" \
+  -d '{
+    "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+    "order": 2
+  }'
+```
+
+**Respuesta** (`201 Created`):
+```json
+{
+  "id": "55555555-5555-5555-5555-555555555555",
+  "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+  "stepName": "step-documentos",
+  "order": 2,
+  "stepStatus": "PENDING"
+}
+```
+
+### Paso 6 — Verificar el flow completo
+
+```bash
+curl http://localhost:8080/fluxy/flows/name/flow-pedido
+```
+
+**Respuesta** (`200 OK`):
+```json
+{
+  "id": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "name": "flow-pedido",
+  "type": "BATCH",
+  "description": "Flow de procesamiento de pedido: notificación al cliente y generación de documentos",
+  "steps": [
+    {
+      "id": "44444444-4444-4444-4444-444444444444",
+      "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "stepName": "step-notificacion",
+      "order": 1,
+      "stepStatus": "PENDING"
+    },
+    {
+      "id": "55555555-5555-5555-5555-555555555555",
+      "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "stepName": "step-documentos",
+      "order": 2,
+      "stepStatus": "PENDING"
+    }
+  ]
+}
+```
+
+### Paso 7 — Inicializar el flow
+
+Antes de ejecutar, se inicializa el flow (resetea todos los estados a `PENDING`):
+
+```bash
+curl -X POST http://localhost:8080/fluxy/execution/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/initialize \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "pedido",
+    "version": "1.0",
+    "variables": [
+      { "name": "email", "value": "cliente@example.com" },
+      { "name": "nombre", "value": "Juan Pérez" },
+      { "name": "orderId", "value": "ORD-2026-001" }
+    ],
+    "references": [
+      { "type": "orderId", "value": "ORD-2026-001" },
+      { "type": "clienteId", "value": "CLI-100" }
+    ]
+  }'
+```
+
+**Respuesta** (`200 OK`):
+```json
+{
+  "flowId": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "flowName": "flow-pedido",
+  "flowType": "BATCH",
+  "steps": [
+    {
+      "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "stepName": "step-notificacion",
+      "order": 1,
+      "stepStatus": "PENDING",
+      "tasks": [
+        { "taskName": "enviar-email", "order": 1, "status": "PENDING", "result": null }
+      ]
+    },
+    {
+      "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "stepName": "step-documentos",
+      "order": 2,
+      "stepStatus": "PENDING",
+      "tasks": [
+        { "taskName": "generar-pdf", "order": 1, "status": "PENDING", "result": null },
+        { "taskName": "validar-inventario", "order": 2, "status": "PENDING", "result": null }
+      ]
+    }
+  ]
+}
+```
+
+### Paso 8 — Procesar el flow (step-by-step)
+
+Cada llamada a `/process` ejecuta **una sola tarea**. Hay que llamar repetidamente hasta completar todas.
+
+**8a. Primera llamada** — ejecuta `enviar-email` (task 1 del step 1):
+
+```bash
+curl -X POST http://localhost:8080/fluxy/execution/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "pedido",
+    "version": "1.0",
+    "variables": [
+      { "name": "email", "value": "cliente@example.com" },
+      { "name": "nombre", "value": "Juan Pérez" }
+    ],
+    "references": [
+      { "type": "orderId", "value": "ORD-2026-001" }
+    ]
+  }'
+```
+
+**Respuesta** — step-notificacion completado, step-documentos pendiente:
+```json
+{
+  "flowId": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "flowName": "flow-pedido",
+  "flowType": "BATCH",
+  "steps": [
+    {
+      "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "stepName": "step-notificacion",
+      "order": 1,
+      "stepStatus": "FINISHED",
+      "tasks": [
+        { "taskName": "enviar-email", "order": 1, "status": "FINISHED", "result": "SUCCESS" }
+      ]
+    },
+    {
+      "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "stepName": "step-documentos",
+      "order": 2,
+      "stepStatus": "PENDING",
+      "tasks": [
+        { "taskName": "generar-pdf", "order": 1, "status": "PENDING", "result": null },
+        { "taskName": "validar-inventario", "order": 2, "status": "PENDING", "result": null }
+      ]
+    }
+  ]
+}
+```
+
+**8b. Segunda llamada** — ejecuta `generar-pdf` (task 1 del step 2):
+
+```bash
+curl -X POST http://localhost:8080/fluxy/execution/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "pedido",
+    "version": "1.0",
+    "variables": [
+      { "name": "facturaId", "value": "FAC-2026-001" }
+    ],
+    "references": [
+      { "type": "orderId", "value": "ORD-2026-001" }
+    ]
+  }'
+```
+
+**Respuesta** — `generar-pdf` completada, `validar-inventario` pendiente:
+```json
+{
+  "flowId": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "flowName": "flow-pedido",
+  "flowType": "BATCH",
+  "steps": [
+    {
+      "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "stepName": "step-notificacion",
+      "order": 1,
+      "stepStatus": "FINISHED",
+      "tasks": [
+        { "taskName": "enviar-email", "order": 1, "status": "FINISHED", "result": "SUCCESS" }
+      ]
+    },
+    {
+      "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "stepName": "step-documentos",
+      "order": 2,
+      "stepStatus": "RUNNING",
+      "tasks": [
+        { "taskName": "generar-pdf", "order": 1, "status": "FINISHED", "result": "SUCCESS" },
+        { "taskName": "validar-inventario", "order": 2, "status": "PENDING", "result": null }
+      ]
+    }
+  ]
+}
+```
+
+**8c. Tercera llamada** — ejecuta `validar-inventario` (task 2 del step 2):
+
+```bash
+curl -X POST http://localhost:8080/fluxy/execution/flows/f6a7b8c9-d0e1-2345-fabc-456789012345/process \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "pedido",
+    "version": "1.0",
+    "variables": [
+      { "name": "productoId", "value": "PROD-500" },
+      { "name": "cantidad", "value": "3" }
+    ],
+    "references": [
+      { "type": "orderId", "value": "ORD-2026-001" }
+    ]
+  }'
+```
+
+**Respuesta** — flow completado, todos los steps en `FINISHED`:
+```json
+{
+  "flowId": "f6a7b8c9-d0e1-2345-fabc-456789012345",
+  "flowName": "flow-pedido",
+  "flowType": "BATCH",
+  "steps": [
+    {
+      "stepId": "d4e5f6a7-b8c9-0123-defa-234567890123",
+      "stepName": "step-notificacion",
+      "order": 1,
+      "stepStatus": "FINISHED",
+      "tasks": [
+        { "taskName": "enviar-email", "order": 1, "status": "FINISHED", "result": "SUCCESS" }
+      ]
+    },
+    {
+      "stepId": "e5f6a7b8-c9d0-1234-efab-345678901234",
+      "stepName": "step-documentos",
+      "order": 2,
+      "stepStatus": "FINISHED",
+      "tasks": [
+        { "taskName": "generar-pdf", "order": 1, "status": "FINISHED", "result": "SUCCESS" },
+        { "taskName": "validar-inventario", "order": 2, "status": "FINISHED", "result": "SUCCESS" }
+      ]
+    }
+  ]
+}
+```
+
+### Ejecución de task a demanda (sin flow)
+
+También puedes ejecutar cualquier task directamente por nombre:
+
+```bash
+curl -X POST http://localhost:8080/fluxy/execution/tasks/enviar-email/execute \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "default",
+    "version": "1.0",
+    "variables": [
+      { "name": "email", "value": "destinatario@example.com" },
+      { "name": "asunto", "value": "Confirmación de pedido" }
+    ],
+    "references": [
+      { "type": "orderId", "value": "ORD-2026-999" }
+    ]
+  }'
+```
+
+**Respuesta** (`200 OK`):
+```json
+{
+  "taskName": "enviar-email",
+  "status": "FINISHED",
+  "result": "SUCCESS"
+}
+```
+
+### Resumen visual del escenario
+
+```
+flow-pedido (BATCH)
+├── step-notificacion (orden 1)
+│   └── enviar-email (orden 1)
+└── step-documentos (orden 2)
+    ├── generar-pdf (orden 1)
+    └── validar-inventario (orden 2)
+
+Ejecución: initialize → process × 3 → FINISHED
+```
+
+---
+
+## Colección Postman
+
+El proyecto incluye una colección Postman lista para importar con todos los endpoints y un escenario de ejemplo completo.
+
+### Importar la colección
+
+1. Abre Postman y haz clic en **Import**.
+2. Selecciona el archivo `postman/fluxy-collection.json` de la raíz del proyecto.
+3. Crea un **Environment** en Postman con la variable:
+
+| Variable | Valor |
+|----------|-------|
+| `baseUrl` | `http://localhost:8080` |
+
+### Contenido de la colección
+
+| Carpeta | Descripción | Requests |
+|---------|-------------|----------|
+| **1 — Tasks** | Crear, listar y buscar tasks | Crear `enviar-email`, `generar-pdf`, `validar-inventario`, listar todas, buscar por ID y nombre |
+| **2 — Steps** | Crear steps y asignar tasks | Crear `step-notificacion` y `step-documentos`, asignar tasks, listar y buscar |
+| **3 — Flows** | Crear flows y asignar steps | Crear `flow-pedido`, asignar steps, listar, buscar por nombre y tipo |
+| **4 — Execution** | Ejecutar el flow completo | Inicializar, procesar (3 llamadas), procesar step a demanda, ejecutar task a demanda |
+| **5 — Cleanup** | Limpiar datos de prueba | Eliminar steps del flow, eliminar flow, steps y tasks |
+
+### Scripts de test automáticos
+
+Cada request de creación incluye scripts de **Tests** que:
+- ✅ Validan el código de respuesta HTTP (`201 Created`, `200 OK`, `204 No Content`)
+- ✅ Verifican los campos de la respuesta (nombre, tipo, orden, etc.)
+- ✅ Guardan automáticamente los IDs generados como **variables de entorno** Postman
+
+**Variables auto-guardadas:**
+
+| Variable | Descripción |
+|----------|-------------|
+| `taskEmailId` | ID de la task `enviar-email` |
+| `taskPdfId` | ID de la task `generar-pdf` |
+| `taskInventarioId` | ID de la task `validar-inventario` |
+| `stepNotifId` | ID del step `step-notificacion` |
+| `stepDocsId` | ID del step `step-documentos` |
+| `flowPedidoId` | ID del flow `flow-pedido` |
+
+> **Importante:** Ejecuta las requests **en orden** dentro de cada carpeta para que los IDs se encadenen correctamente. Postman usa las variables `{{taskEmailId}}`, `{{stepNotifId}}`, etc. en las URLs y bodies de las requests posteriores.
+
+---
+
 ## Estructura del proyecto
 
 ```
 spring-boot-starter-fluxy/
 ├── build.gradle
 ├── settings.gradle
+├── postman/
+│   └── fluxy-collection.json
 └── src/main/
     ├── java/org/fluxy/starter/
     │   ├── FluxyAutoConfiguration.java
