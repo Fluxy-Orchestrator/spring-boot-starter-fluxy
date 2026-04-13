@@ -6,7 +6,9 @@ import org.fluxy.spring.persistence.repository.FluxyFlowRepository;
 import org.fluxy.spring.persistence.repository.FluxyStepRepository;
 import org.fluxy.spring.persistence.repository.FluxyTaskRepository;
 import org.fluxy.spring.persistence.repository.StepTaskRepository;
+import org.fluxy.starter.properties.FluxyTaskRegistrationProperties;
 import org.fluxy.starter.registration.FluxyTaskRegistry;
+import org.fluxy.starter.registration.TaskAutoRegistrationProcessor;
 import org.fluxy.starter.web.FluxyExecutionController;
 import org.fluxy.starter.web.FluxyFlowController;
 import org.fluxy.starter.web.FluxyStepController;
@@ -18,6 +20,7 @@ import org.fluxy.starter.service.FluxyTaskService;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnWebApplication;
+import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.DispatcherServlet;
@@ -107,6 +110,31 @@ public class FluxyWebAutoConfiguration {
     public FluxyExecutionController fluxyExecutionController(
             FluxyExecutionService fluxyExecutionService) {
         return new FluxyExecutionController(fluxyExecutionService);
+    }
+
+    // ── Auto-registro y validación de tareas @Task ─────────────────────────
+
+    /**
+     * Procesador de auto-registro y validación que, tras el arranque completo
+     * de la aplicación, sincroniza en la base de datos todas las implementaciones
+     * de {@code FluxyTask} anotadas con {@code @Task} y ejecuta las validaciones
+     * de consistencia configuradas.
+     */
+    @Bean
+    @ConditionalOnBean({FluxyTaskService.class, FluxyTaskRepository.class, StepTaskRepository.class})
+    public TaskAutoRegistrationProcessor taskAutoRegistrationProcessor(
+            ApplicationContext applicationContext,
+            FluxyTaskService fluxyTaskService,
+            FluxyTaskRepository fluxyTaskRepository,
+            StepTaskRepository stepTaskRepository,
+            FluxyTaskRegistrationProperties registrationProperties) {
+        return new TaskAutoRegistrationProcessor(
+                applicationContext,
+                fluxyTaskService,
+                fluxyTaskRepository,
+                stepTaskRepository,
+                registrationProperties
+        );
     }
 }
 

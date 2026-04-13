@@ -10,9 +10,12 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.sqs.SqsAsyncClient;
 
+import java.net.URI;
 import java.util.List;
 
 /**
@@ -55,6 +58,16 @@ public class FluxyAwsSqsEventBusAutoConfiguration {
         if (sqs.getRegion() != null && !sqs.getRegion().isBlank()) {
             builder.region(Region.of(sqs.getRegion()));
         }
+        if (sqs.getEndpoint() != null && !sqs.getEndpoint().isBlank()) {
+            builder.endpointOverride(URI.create(sqs.getEndpoint()));
+        }
+
+        if (sqs.getAccessKey() != null && ! sqs.getAccessKey().isBlank() &&
+                sqs.getSecretKey() != null && !sqs.getSecretKey().isBlank()) {
+            var credentials = AwsBasicCredentials.create(sqs.getAccessKey(), sqs.getSecretKey());
+            builder.credentialsProvider(StaticCredentialsProvider.create(credentials));
+        }
+
         return builder.build();
     }
 

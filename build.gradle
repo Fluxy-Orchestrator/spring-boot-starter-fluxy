@@ -15,7 +15,7 @@ ext {
     lombokVersion       = '1.18.44'
     fluxySpringVersion  = '1.1.0'
     slf4jVersion        = '2.0.16'
-    springCloudAwsSqsVersion = '3.3.1'
+    springCloudAwsSqsVersion = '4.0.0'
     springAmqpVersion   = '3.2.4'
     jacksonVersion      = '3.1.1'
 }
@@ -89,6 +89,10 @@ dependencies {
     testImplementation 'org.mockito:mockito-core:5.12.0'
     testImplementation 'org.mockito:mockito-junit-jupiter:5.12.0'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.compilerArgs.add('-parameters')
 }
 
 tasks.named('test') {

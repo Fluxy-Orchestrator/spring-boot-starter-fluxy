@@ -1,15 +1,10 @@
 package org.fluxy.starter;
 
 import org.fluxy.core.model.FluxyTask;
-import org.fluxy.core.service.FlowExecutor;
-import org.fluxy.core.service.FluxyEventsBus;
-import org.fluxy.core.service.StepExecutionService;
-import org.fluxy.core.service.TaskExecutorService;
-import org.fluxy.spring.persistence.repository.FluxyTaskRepository;
-import org.fluxy.spring.persistence.repository.StepTaskRepository;
 import org.fluxy.starter.autoconfigure.FluxyAwsSqsEventBusAutoConfiguration;
 import org.fluxy.starter.autoconfigure.FluxyDataAutoConfiguration;
 import org.fluxy.starter.autoconfigure.FluxyDedicatedDataSourceAutoConfiguration;
+import org.fluxy.starter.autoconfigure.FluxyExecutionEngineAutoConfiguration;
 import org.fluxy.starter.autoconfigure.FluxyRabbitMqEventBusAutoConfiguration;
 import org.fluxy.starter.autoconfigure.FluxySpringEventBusAutoConfiguration;
 import org.fluxy.starter.autoconfigure.FluxyWebAutoConfiguration;
@@ -17,15 +12,9 @@ import org.fluxy.starter.properties.FluxyDataSourceProperties;
 import org.fluxy.starter.properties.FluxyEventBusProperties;
 import org.fluxy.starter.properties.FluxyJpaProperties;
 import org.fluxy.starter.properties.FluxyTaskRegistrationProperties;
-import org.fluxy.starter.registration.FluxyTaskRegistry;
-import org.fluxy.starter.registration.TaskAutoRegistrationProcessor;
-import org.fluxy.starter.service.FluxyTaskService;
 import org.springframework.boot.autoconfigure.AutoConfiguration;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnClass;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
-import org.springframework.context.ApplicationContext;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 
 /**
@@ -101,85 +90,17 @@ import org.springframework.context.annotation.Import;
         FluxyEventBusProperties.class
 })
 @Import({
+        // 1. Datasource y repositorios JPA
         FluxyDedicatedDataSourceAutoConfiguration.class,
         FluxyDataAutoConfiguration.class,
-        FluxyWebAutoConfiguration.class,
+        // 2. Bus de eventos (provee FluxyEventsBus)
         FluxySpringEventBusAutoConfiguration.class,
         FluxyAwsSqsEventBusAutoConfiguration.class,
-        FluxyRabbitMqEventBusAutoConfiguration.class
+        FluxyRabbitMqEventBusAutoConfiguration.class,
+        // 3. Motor de ejecución (necesita FluxyEventsBus → provee TaskExecutorService + FluxyTaskRegistry)
+        FluxyExecutionEngineAutoConfiguration.class,
+        // 4. Controladores REST (necesita TaskExecutorService + FluxyTaskRegistry + repos)
+        FluxyWebAutoConfiguration.class
 })
 public class FluxyAutoConfiguration {
-
-    /**
-     * Registro en memoria de todos los beans {@link FluxyTask} del contexto.
-     * Permite buscar instancias por nombre para usarlas en la ejecución de flows.
-     */
-    @Bean
-    public FluxyTaskRegistry fluxyTaskRegistry(ApplicationContext applicationContext) {
-        return new FluxyTaskRegistry(applicationContext);
-    }
-
-    // ── Servicios del motor de ejecución (fluxy-core) ────────────────────────
-
-    /**
-     * Servicio de ejecución de tareas del core.
-     * Ejecuta una {@link FluxyTask} dentro de un {@link org.fluxy.core.model.ExecutionContext}
-     * y publica el resultado como {@link org.fluxy.core.model.FluxyEvent} en el bus configurado.
-     *
-     * <p>El {@link FluxyEventsBus} se resuelve automáticamente según la propiedad
-     * {@code fluxy.eventbus.type}: SPRING (default), SQS o RABBIT.</p>
-     */
-    @Bean
-    @ConditionalOnBean(FluxyEventsBus.class)
-    public TaskExecutorService taskExecutorService(FluxyEventsBus eventsBus) {
-        return new TaskExecutorService(eventsBus);
-    }
-
-    /**
-     * Servicio de ejecución de steps del core.
-     * Orquesta la ejecución secuencial de tareas dentro de un step.
-     */
-    @Bean
-    @ConditionalOnBean({TaskExecutorService.class, FluxyEventsBus.class})
-    public StepExecutionService stepExecutionService(
-            TaskExecutorService taskExecutorService,
-            FluxyEventsBus eventsBus) {
-        return new StepExecutionService(taskExecutorService, eventsBus);
-    }
-
-    /**
-     * Ejecutor de flows del core.
-     * Orquesta la ejecución secuencial de steps dentro de un flow,
-     * evaluando conexiones y condiciones entre steps.
-     */
-    @Bean
-    @ConditionalOnBean({FluxyEventsBus.class, StepExecutionService.class})
-    public FlowExecutor flowExecutor(
-            FluxyEventsBus eventsBus,
-            StepExecutionService stepExecutionService) {
-        return new FlowExecutor(eventsBus, stepExecutionService);
-    }
-
-    /**
-     * Procesador de auto-registro y validación que, tras el arranque completo
-     * de la aplicación, sincroniza en la base de datos todas las implementaciones
-     * de {@link FluxyTask} anotadas con {@code @Task} y ejecuta las validaciones
-     * de consistencia configuradas.
-     */
-    @Bean
-    @ConditionalOnBean({FluxyTaskRepository.class, StepTaskRepository.class})
-    public TaskAutoRegistrationProcessor taskAutoRegistrationProcessor(
-            ApplicationContext applicationContext,
-            FluxyTaskService fluxyTaskService,
-            FluxyTaskRepository fluxyTaskRepository,
-            StepTaskRepository stepTaskRepository,
-            FluxyTaskRegistrationProperties registrationProperties) {
-        return new TaskAutoRegistrationProcessor(
-                applicationContext,
-                fluxyTaskService,
-                fluxyTaskRepository,
-                stepTaskRepository,
-                registrationProperties
-        );
-    }
 }

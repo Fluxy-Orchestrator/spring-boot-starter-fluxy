@@ -79,6 +79,18 @@ public class FluxyEventBusProperties {
          * Ejemplo: {@code us-east-1}
          */
         private String region;
+
+        /**
+         * Endpoint override para el cliente SQS (útil para LocalStack u otros
+         * emuladores locales de AWS). Si no se define, se usa el endpoint
+         * por defecto del SDK de AWS.
+         * Ejemplo: {@code http://localhost:4566}
+         */
+        private String endpoint;
+
+        private String accessKey;
+
+        private String secretKey;
     }
 
     /**
