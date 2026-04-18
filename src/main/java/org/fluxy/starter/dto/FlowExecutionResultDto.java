@@ -4,14 +4,18 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * DTO de respuesta para el resultado de la ejecución de un flow.
+ * DTO de respuesta para el resultado de la ejecucion de un flow.
  *
- * @param flowId   identificador del flow
- * @param flowName nombre del flow
- * @param flowType tipo del flow
- * @param steps    estado de ejecución de cada step del flow
+ * @param executionId     identificador unico de la ejecucion
+ * @param executionStatus estado de la ejecucion (PENDING, RUNNING, FINISHED)
+ * @param flowId          identificador del flow
+ * @param flowName        nombre del flow
+ * @param flowType        tipo del flow
+ * @param steps           estado de ejecucion de cada step del flow
  */
 public record FlowExecutionResultDto(
+        UUID executionId,
+        String executionStatus,
         UUID flowId,
         String flowName,
         String flowType,

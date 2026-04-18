@@ -1,7 +1,6 @@
 package org.fluxy.starter.service;
 
 import lombok.RequiredArgsConstructor;
-import org.fluxy.core.model.TaskStatus;
 import org.fluxy.spring.persistence.entity.FluxyStepEntity;
 import org.fluxy.spring.persistence.entity.FluxyTaskEntity;
 import org.fluxy.spring.persistence.entity.StepTaskEntity;
@@ -75,7 +74,6 @@ public class FluxyStepService {
         stepTask.setStep(step);
         stepTask.setTask(task);
         stepTask.setTaskOrder(request.order());
-        stepTask.setStatus(TaskStatus.PENDING);
         return toStepTaskDto(stepTaskRepository.save(stepTask));
     }
 
@@ -94,7 +92,6 @@ public class FluxyStepService {
         stepTask.setStep(step);
         stepTask.setTask(task);
         stepTask.setTaskOrder(request.order());
-        stepTask.setStatus(TaskStatus.PENDING);
         return toStepTaskDto(stepTaskRepository.save(stepTask));
     }
 
@@ -152,7 +149,7 @@ public class FluxyStepService {
                 entity.getId(),
                 entity.getTask().getName(),
                 entity.getTaskOrder(),
-                entity.getStatus() != null ? entity.getStatus().name() : null
+                null
         );
     }
 }

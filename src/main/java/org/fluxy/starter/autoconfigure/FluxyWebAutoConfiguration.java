@@ -1,7 +1,11 @@
 package org.fluxy.starter.autoconfigure;
 
 import org.fluxy.core.service.TaskExecutorService;
+import org.fluxy.spring.persistence.repository.ExecutionContextRepository;
+import org.fluxy.spring.persistence.repository.ExecutionStepRecordRepository;
+import org.fluxy.spring.persistence.repository.ExecutionTaskRecordRepository;
 import org.fluxy.spring.persistence.repository.FlowStepRepository;
+import org.fluxy.spring.persistence.repository.FluxyExecutionRepository;
 import org.fluxy.spring.persistence.repository.FluxyFlowRepository;
 import org.fluxy.spring.persistence.repository.FluxyStepRepository;
 import org.fluxy.spring.persistence.repository.FluxyTaskRepository;
@@ -88,12 +92,18 @@ public class FluxyWebAutoConfiguration {
     @Bean
     @ConditionalOnBean({FluxyFlowRepository.class, FlowStepRepository.class,
             FluxyStepRepository.class, StepTaskRepository.class,
+            FluxyExecutionRepository.class, ExecutionContextRepository.class,
+            ExecutionStepRecordRepository.class, ExecutionTaskRecordRepository.class,
             TaskExecutorService.class, FluxyTaskRegistry.class})
     public FluxyExecutionService fluxyExecutionService(
             FluxyFlowRepository fluxyFlowRepository,
             FlowStepRepository flowStepRepository,
             FluxyStepRepository fluxyStepRepository,
             StepTaskRepository stepTaskRepository,
+            FluxyExecutionRepository fluxyExecutionRepository,
+            ExecutionContextRepository executionContextRepository,
+            ExecutionStepRecordRepository executionStepRecordRepository,
+            ExecutionTaskRecordRepository executionTaskRecordRepository,
             FluxyTaskRegistry fluxyTaskRegistry,
             TaskExecutorService taskExecutorService) {
         return new FluxyExecutionService(
@@ -101,6 +111,10 @@ public class FluxyWebAutoConfiguration {
                 flowStepRepository,
                 fluxyStepRepository,
                 stepTaskRepository,
+                fluxyExecutionRepository,
+                executionContextRepository,
+                executionStepRecordRepository,
+                executionTaskRecordRepository,
                 fluxyTaskRegistry,
                 taskExecutorService);
     }

@@ -3,16 +3,27 @@ package org.fluxy.starter.service;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.fluxy.core.model.ExecutionContext;
+import org.fluxy.core.model.ExecutionStatus;
 import org.fluxy.core.model.FluxyTask;
 import org.fluxy.core.model.StepStatus;
 import org.fluxy.core.model.TaskResult;
 import org.fluxy.core.model.TaskStatus;
 import org.fluxy.core.service.TaskExecutorService;
+import org.fluxy.spring.persistence.entity.ExecutionContextEntity;
+import org.fluxy.spring.persistence.entity.ExecutionStepRecordEntity;
+import org.fluxy.spring.persistence.entity.ExecutionTaskRecordEntity;
 import org.fluxy.spring.persistence.entity.FlowStepEntity;
+import org.fluxy.spring.persistence.entity.FluxyExecutionEntity;
 import org.fluxy.spring.persistence.entity.FluxyFlowEntity;
 import org.fluxy.spring.persistence.entity.FluxyStepEntity;
+import org.fluxy.spring.persistence.entity.ReferenceEntity;
 import org.fluxy.spring.persistence.entity.StepTaskEntity;
+import org.fluxy.spring.persistence.entity.VariableEntity;
+import org.fluxy.spring.persistence.repository.ExecutionContextRepository;
+import org.fluxy.spring.persistence.repository.ExecutionStepRecordRepository;
+import org.fluxy.spring.persistence.repository.ExecutionTaskRecordRepository;
 import org.fluxy.spring.persistence.repository.FlowStepRepository;
+import org.fluxy.spring.persistence.repository.FluxyExecutionRepository;
 import org.fluxy.spring.persistence.repository.FluxyFlowRepository;
 import org.fluxy.spring.persistence.repository.FluxyStepRepository;
 import org.fluxy.spring.persistence.repository.StepTaskRepository;
@@ -24,22 +35,23 @@ import org.fluxy.starter.dto.TaskExecutionDto;
 import org.fluxy.starter.dto.TaskExecutionResultDto;
 import org.fluxy.starter.registration.FluxyTaskRegistry;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
- * Servicio de ejecución de Fluxy — orquesta la inicialización de flows,
- * el procesamiento de steps y la ejecución de tasks a demanda.
+ * Servicio de ejecucion de Fluxy — orquesta la inicializacion y procesamiento
+ * de ejecuciones ({@link FluxyExecutionEntity}) como unidad aislada de estado.
  *
- * <p>Actúa como puente entre las entidades JPA de {@code fluxy-spring} y
- * los servicios del motor de ejecución de {@code fluxy-core}, resolviendo
- * las instancias vivas de {@link FluxyTask} desde el {@link FluxyTaskRegistry}
- * y delegando la ejecución real al {@link TaskExecutorService} que publica
- * eventos vía el {@link org.fluxy.core.service.FluxyEventsBus} configurado.</p>
- *
- * <p>El estado de ejecución (statuses de steps y tasks) se persiste en las
- * entidades JPA, permitiendo un modelo de ejecución paso a paso (step-by-step)
- * controlado por el cliente.</p>
+ * <p>Cada ejecucion encapsula un flow, un contexto y la traza de steps/tasks.
+ * La idempotencia se garantiza mediante un hash SHA-256 de las referencias
+ * iniciales del contexto: mismas referencias + mismo flow (no FINISHED)
+ * retornan la ejecucion existente sin crear duplicados.</p>
  */
 @Slf4j
 @RequiredArgsConstructor
@@ -49,124 +61,132 @@ public class FluxyExecutionService {
     private final FlowStepRepository flowStepRepository;
     private final FluxyStepRepository stepRepository;
     private final StepTaskRepository stepTaskRepository;
+    private final FluxyExecutionRepository executionRepository;
+    private final ExecutionContextRepository contextRepository;
+    private final ExecutionStepRecordRepository stepRecordRepository;
+    private final ExecutionTaskRecordRepository taskRecordRepository;
     private final FluxyTaskRegistry taskRegistry;
     private final TaskExecutorService taskExecutorService;
 
-    // ── Flow execution ──────────────────────────────────────────────────────
+    // ── Flow initialization ──────────────────────────────────────────────────
 
     /**
-     * Inicializa la ejecución de un flow: establece todos los steps y tasks
-     * en estado {@code PENDING}, limpiando cualquier resultado previo.
+     * Inicializa la ejecucion de un flow: valida invariantes, computa la
+     * clave de idempotencia y crea (o retorna) la ejecucion correspondiente.
      *
-     * @param flowId  identificador del flow a inicializar
-     * @param request contexto de ejecución (no se usa para la inicialización,
-     *                pero se valida que el flow exista)
-     * @return estado completo del flow tras la inicialización
-     * @throws IllegalArgumentException si el flow no existe
+     * <ol>
+     *   <li>Valida que el request contenga referencias.</li>
+     *   <li>Resuelve el flow por ID.</li>
+     *   <li>Valida que {@code flow.name == request.type}.</li>
+     *   <li>Computa idempotencyKey (SHA-256 de referencias ordenadas).</li>
+     *   <li>Si existe una ejecucion activa con esa clave, la retorna (idempotente).</li>
+     *   <li>Si no, crea ExecutionContext, FluxyExecution y step records.</li>
+     * </ol>
+     *
+     * @param flowId  identificador del flow a ejecutar
+     * @param request contexto de ejecucion obligatorio (con referencias)
+     * @return estado completo de la ejecucion
      */
     public FlowExecutionResultDto initializeFlow(UUID flowId, ExecutionContextRequest request) {
+        // 1. Validar referencias
+        if (request == null || request.references() == null || request.references().isEmpty()) {
+            throw new IllegalArgumentException(
+                    "El contexto debe contener al menos una referencia para inicializar una ejecucion.");
+        }
+
+        // 2. Resolver flow
         FluxyFlowEntity flowEntity = flowRepository.findById(flowId)
                 .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowId));
 
-        List<FlowStepEntity> steps = flowStepRepository.findByFlowOrderByStepOrderAsc(flowEntity);
-        for (FlowStepEntity flowStep : steps) {
-            flowStep.setStepStatus(StepStatus.PENDING);
-            List<StepTaskEntity> tasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(flowStep.getStep());
-            for (StepTaskEntity task : tasks) {
-                task.setStatus(TaskStatus.PENDING);
-                task.setResult(null);
+        // 3. Validar flow.name == context.type
+        String contextType = request.type() != null ? request.type() : "default";
+        if (!flowEntity.getName().equals(contextType)) {
+            throw new IllegalArgumentException(
+                    "El flow '%s' no es compatible con un contexto de tipo '%s'. El nombre del flow y el tipo del contexto deben coincidir."
+                            .formatted(flowEntity.getName(), contextType));
+        }
+
+        // 4. Computar idempotency key
+        String idempotencyKey = computeIdempotencyKey(request);
+
+        // 5. Buscar ejecucion activa existente (idempotencia)
+        Optional<FluxyExecutionEntity> existing = executionRepository
+                .findByFlowAndIdempotencyKeyAndStatusNot(flowEntity, idempotencyKey, ExecutionStatus.FINISHED);
+        if (existing.isPresent()) {
+            log.info("[Fluxy] Ejecucion idempotente encontrada (id={}) para flow '{}'. Retornando existente.",
+                    existing.get().getId(), flowEntity.getName());
+            return toFlowResult(existing.get());
+        }
+
+        // 6. Crear contexto
+        ExecutionContextEntity contextEntity = new ExecutionContextEntity();
+        contextEntity.setType(contextType);
+        contextEntity.setVersion(request.version() != null ? request.version() : "1.0");
+
+        if (request.variables() != null) {
+            for (var v : request.variables()) {
+                VariableEntity ve = new VariableEntity();
+                ve.setName(v.name());
+                ve.setValue(v.value());
+                ve.setExecutionContext(contextEntity);
+                contextEntity.getVariables().add(ve);
             }
-            stepTaskRepository.saveAll(tasks);
         }
-        flowStepRepository.saveAll(steps);
-
-        log.info("[Fluxy] Flow '{}' (id={}) inicializado. {} step(s) en PENDING.",
-                flowEntity.getName(), flowId, steps.size());
-
-        return toFlowResult(flowEntity, steps);
-    }
-
-    /**
-     * Procesa el siguiente paso en un flow: encuentra el step actualmente
-     * en ejecución (RUNNING) o el siguiente pendiente (PENDING), y ejecuta
-     * su siguiente tarea pendiente.
-     *
-     * <p>Cuando todas las tareas de un step se completan, el step pasa a
-     * {@code FINISHED} automáticamente.</p>
-     *
-     * @param flowId  identificador del flow a procesar
-     * @param request contexto de ejecución con variables y referencias
-     * @return estado completo del flow tras el procesamiento
-     * @throws IllegalArgumentException si el flow no existe
-     * @throws IllegalStateException    si no quedan steps pendientes
-     */
-    public FlowExecutionResultDto processFlow(UUID flowId, ExecutionContextRequest request) {
-        FluxyFlowEntity flowEntity = flowRepository.findById(flowId)
-                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowId));
-
-        ExecutionContext ctx = toExecutionContext(request);
-
-        List<FlowStepEntity> steps = flowStepRepository.findByFlowOrderByStepOrderAsc(flowEntity);
-
-        // Buscar step actualmente en RUNNING, o el siguiente PENDING
-        FlowStepEntity currentStep = steps.stream()
-                .filter(s -> s.getStepStatus() == StepStatus.RUNNING)
-                .findFirst()
-                .orElseGet(() -> steps.stream()
-                        .filter(s -> s.getStepStatus() == StepStatus.PENDING)
-                        .findFirst()
-                        .orElseThrow(() -> new IllegalStateException(
-                                "No hay steps pendientes en el flow: " + flowId)));
-
-        if (currentStep.getStepStatus() == StepStatus.PENDING) {
-            currentStep.setStepStatus(StepStatus.RUNNING);
-            flowStepRepository.save(currentStep);
+        for (var r : request.references()) {
+            // Validar unicidad de tipo
+            boolean duplicate = contextEntity.getReferences().stream()
+                    .anyMatch(ref -> ref.getRefType().equals(r.type()));
+            if (duplicate) {
+                throw new IllegalArgumentException(
+                        "Referencia duplicada de tipo '%s'. Cada tipo de referencia debe ser unico."
+                                .formatted(r.type()));
+            }
+            ReferenceEntity re = new ReferenceEntity();
+            re.setRefType(r.type());
+            re.setValue(r.value());
+            re.setExecutionContext(contextEntity);
+            contextEntity.getReferences().add(re);
         }
 
-        // Ejecutar siguiente tarea del step
-        processStepInternal(currentStep.getStep(), ctx);
+        // 7. Crear ejecucion
+        FluxyExecutionEntity executionEntity = new FluxyExecutionEntity();
+        executionEntity.setFlow(flowEntity);
+        executionEntity.setContext(contextEntity);
+        executionEntity.setStatus(ExecutionStatus.PENDING);
+        executionEntity.setIdempotencyKey(idempotencyKey);
 
-        // Verificar si todas las tareas del step terminaron
-        List<StepTaskEntity> stepTasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(currentStep.getStep());
-        boolean allDone = stepTasks.stream().allMatch(t -> t.getStatus() == TaskStatus.FINISHED);
-        if (allDone) {
-            currentStep.setStepStatus(StepStatus.FINISHED);
-            flowStepRepository.save(currentStep);
-            log.info("[Fluxy] Step '{}' completado en flow '{}'.",
-                    currentStep.getStep().getName(), flowEntity.getName());
+        // 8. Crear step records (uno por cada FlowStep del flow, todos PENDING)
+        List<FlowStepEntity> flowSteps = flowStepRepository.findByFlowOrderByStepOrderAsc(flowEntity);
+        for (FlowStepEntity fs : flowSteps) {
+            ExecutionStepRecordEntity stepRecord = new ExecutionStepRecordEntity();
+            stepRecord.setExecution(executionEntity);
+            stepRecord.setFlowStep(fs);
+            stepRecord.setStepStatus(StepStatus.PENDING);
+
+            // Crear task records para cada task del step
+            List<StepTaskEntity> stepTasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(fs.getStep());
+            for (StepTaskEntity st : stepTasks) {
+                ExecutionTaskRecordEntity taskRecord = new ExecutionTaskRecordEntity();
+                taskRecord.setExecutionStepRecord(stepRecord);
+                taskRecord.setStepTask(st);
+                taskRecord.setStatus(TaskStatus.PENDING);
+                taskRecord.setResult(null);
+                stepRecord.getTaskRecords().add(taskRecord);
+            }
+
+            executionEntity.getStepRecords().add(stepRecord);
         }
 
-        // Refrescar steps para el resultado
-        List<FlowStepEntity> refreshedSteps = flowStepRepository.findByFlowOrderByStepOrderAsc(flowEntity);
-        return toFlowResult(flowEntity, refreshedSteps);
-    }
+        executionRepository.save(executionEntity);
 
-    // ── Step execution ──────────────────────────────────────────────────────
+        log.info("[Fluxy] Ejecucion creada (id={}) para flow '{}' con {} step(s).",
+                executionEntity.getId(), flowEntity.getName(), flowSteps.size());
 
-    /**
-     * Procesa un step a demanda: encuentra la siguiente tarea pendiente
-     * dentro del step y la ejecuta.
-     *
-     * @param stepId  identificador del step a procesar
-     * @param request contexto de ejecución con variables y referencias
-     * @return estado del step tras el procesamiento
-     * @throws IllegalArgumentException si el step no existe
-     * @throws IllegalStateException    si no quedan tareas pendientes en el step
-     */
-    public StepExecutionResultDto processStep(UUID stepId, ExecutionContextRequest request) {
-        FluxyStepEntity stepEntity = stepRepository.findById(stepId)
-                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepId));
-
-        ExecutionContext ctx = toExecutionContext(request);
-        processStepInternal(stepEntity, ctx);
-
-        List<StepTaskEntity> refreshedTasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(stepEntity);
-        return toStepResult(stepEntity, refreshedTasks);
+        return toFlowResult(executionEntity);
     }
 
     /**
      * Inicializa un flow por nombre.
-     * Resuelve el nombre a ID y delega a {@link #initializeFlow(UUID, ExecutionContextRequest)}.
      */
     public FlowExecutionResultDto initializeFlowByName(String flowName, ExecutionContextRequest request) {
         FluxyFlowEntity flowEntity = flowRepository.findByName(flowName)
@@ -174,126 +194,257 @@ public class FluxyExecutionService {
         return initializeFlow(flowEntity.getId(), request);
     }
 
+    // ── Flow processing ──────────────────────────────────────────────────────
+
     /**
-     * Procesa un flow por nombre.
-     * Resuelve el nombre a ID y delega a {@link #processFlow(UUID, ExecutionContextRequest)}.
+     * Procesa el siguiente paso de una ejecucion: busca el step en RUNNING
+     * o el siguiente PENDING, ejecuta su siguiente tarea pendiente y
+     * actualiza el estado.
+     *
+     * @param executionId identificador de la ejecucion
+     * @param request     contexto adicional (variables opcionales para inyectar)
+     * @return estado completo de la ejecucion tras el procesamiento
      */
+    public FlowExecutionResultDto processExecution(UUID executionId, ExecutionContextRequest request) {
+        FluxyExecutionEntity executionEntity = executionRepository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("Ejecucion no encontrada: " + executionId));
+
+        ExecutionContext ctx = toExecutionContext(executionEntity, request);
+
+        List<ExecutionStepRecordEntity> stepRecords =
+                stepRecordRepository.findByExecutionOrderByFlowStepStepOrderAsc(executionEntity);
+
+        // Buscar step RUNNING o siguiente PENDING
+        ExecutionStepRecordEntity currentStepRecord = stepRecords.stream()
+                .filter(sr -> sr.getStepStatus() == StepStatus.RUNNING)
+                .findFirst()
+                .orElseGet(() -> stepRecords.stream()
+                        .filter(sr -> sr.getStepStatus() == StepStatus.PENDING)
+                        .findFirst()
+                        .orElseThrow(() -> new IllegalStateException(
+                                "No hay steps pendientes en la ejecucion: " + executionId)));
+
+        if (currentStepRecord.getStepStatus() == StepStatus.PENDING) {
+            currentStepRecord.setStepStatus(StepStatus.RUNNING);
+            stepRecordRepository.save(currentStepRecord);
+        }
+
+        // Ejecutar la siguiente tarea del step
+        processStepRecord(currentStepRecord, ctx);
+
+        // Verificar si todas las tareas del step terminaron
+        List<ExecutionTaskRecordEntity> taskRecords = taskRecordRepository
+                .findByExecutionStepRecord(currentStepRecord);
+        boolean allDone = taskRecords.stream()
+                .allMatch(tr -> tr.getStatus() == TaskStatus.FINISHED);
+        if (allDone) {
+            currentStepRecord.setStepStatus(StepStatus.FINISHED);
+            stepRecordRepository.save(currentStepRecord);
+            log.info("[Fluxy] Step '{}' completado en ejecucion '{}'.",
+                    currentStepRecord.getFlowStep().getStep().getName(), executionId);
+        }
+
+        // Actualizar status de ejecucion si era PENDING
+        if (executionEntity.getStatus() == ExecutionStatus.PENDING) {
+            executionEntity.setStatus(ExecutionStatus.RUNNING);
+            executionRepository.save(executionEntity);
+        }
+
+        return toFlowResult(executionEntity);
+    }
+
+    /**
+     * @deprecated Usar {@link #processExecution(UUID, ExecutionContextRequest)} con el executionId directamente.
+     */
+    @Deprecated(forRemoval = true)
+    public FlowExecutionResultDto processFlow(UUID flowId, ExecutionContextRequest request) {
+        FluxyFlowEntity flowEntity = flowRepository.findById(flowId)
+                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowId));
+
+        // Buscar la unica ejecucion activa del flow (ambiguo si hay multiples)
+        List<FluxyExecutionEntity> active = executionRepository.findByFlow(flowEntity).stream()
+                .filter(e -> e.getStatus() != ExecutionStatus.FINISHED)
+                .toList();
+        if (active.isEmpty()) {
+            throw new IllegalStateException("No hay ejecuciones activas para el flow: " + flowId);
+        }
+        if (active.size() > 1) {
+            throw new IllegalStateException(
+                    "Hay multiples ejecuciones activas para el flow '%s'. Use el endpoint /executions/{executionId}/process."
+                            .formatted(flowEntity.getName()));
+        }
+        return processExecution(active.getFirst().getId(), request);
+    }
+
+    /**
+     * @deprecated Usar {@link #processExecution(UUID, ExecutionContextRequest)} con el executionId directamente.
+     */
+    @Deprecated(forRemoval = true)
     public FlowExecutionResultDto processFlowByName(String flowName, ExecutionContextRequest request) {
         FluxyFlowEntity flowEntity = flowRepository.findByName(flowName)
                 .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
         return processFlow(flowEntity.getId(), request);
     }
 
+    // ── Step execution (standalone) ──────────────────────────────────────────
+
     /**
-     * Procesa un step por nombre.
-     * Resuelve el nombre a ID y delega a {@link #processStep(UUID, ExecutionContextRequest)}.
+     * Procesa un step a demanda (fuera del contexto de una ejecucion).
      */
+    public StepExecutionResultDto processStep(UUID stepId, ExecutionContextRequest request) {
+        FluxyStepEntity stepEntity = stepRepository.findById(stepId)
+                .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepId));
+
+        ExecutionContext ctx = toSimpleExecutionContext(request);
+        List<StepTaskEntity> tasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(stepEntity);
+
+        StepTaskEntity currentTask = tasks.stream()
+                .filter(t -> true) // standalone — ejecuta la primera disponible
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException(
+                        "No hay tareas en el step: " + stepEntity.getName()));
+
+        String taskName = currentTask.getTask().getName();
+        int taskVersion = currentTask.getTask().getVersion();
+        FluxyTask fluxyTask = taskRegistry.findByNameAndVersion(taskName, taskVersion)
+                .orElseThrow(() -> new IllegalArgumentException(
+                        "Tarea '%s' v%d no encontrada en el registro.".formatted(taskName, taskVersion)));
+
+        taskExecutorService.executeTask(fluxyTask, ctx);
+
+        List<TaskExecutionDto> taskDtos = tasks.stream()
+                .map(st -> new TaskExecutionDto(st.getTask().getName(), st.getTaskOrder(), null, null))
+                .toList();
+        return new StepExecutionResultDto(stepEntity.getId(), stepEntity.getName(), taskDtos);
+    }
+
     public StepExecutionResultDto processStepByName(String stepName, ExecutionContextRequest request) {
         FluxyStepEntity stepEntity = stepRepository.findByName(stepName)
                 .orElseThrow(() -> new IllegalArgumentException("Step no encontrado: " + stepName));
         return processStep(stepEntity.getId(), request);
     }
 
-    // ── Task execution ──────────────────────────────────────────────────────
+    // ── Task execution (standalone) ──────────────────────────────────────────
 
-    /**
-     * Ejecuta una tarea específica a demanda, buscándola por nombre en el
-     * {@link FluxyTaskRegistry}. Si existen varias versiones registradas con
-     * el mismo nombre, se utiliza la de <b>mayor versión</b>.
-     *
-     * <p>La ejecución se delega al {@link TaskExecutorService} del core, que
-     * publica un evento {@link org.fluxy.core.model.FluxyEvent} en el bus
-     * configurado (SPRING, SQS o RABBIT).</p>
-     *
-     * @param taskName nombre de la tarea a ejecutar
-     * @param request  contexto de ejecución con variables y referencias
-     * @return resultado de la ejecución
-     * @throws IllegalArgumentException si la tarea no existe en el registro
-     */
     public TaskExecutionResultDto executeTask(String taskName, ExecutionContextRequest request) {
         FluxyTask fluxyTask = taskRegistry.findLatestByName(taskName)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Tarea no encontrada en el registro: " + taskName));
 
-        ExecutionContext ctx = toExecutionContext(request);
-
+        ExecutionContext ctx = toSimpleExecutionContext(request);
         log.info("[Fluxy] Ejecutando tarea '{}' (v{}) a demanda.", taskName, fluxyTask.getVersion());
         TaskResult result = taskExecutorService.executeTask(fluxyTask, ctx);
 
         return new TaskExecutionResultDto(taskName, TaskStatus.FINISHED.name(), result.name());
     }
 
-    /**
-     * Ejecuta una tarea específica a demanda, buscándola por nombre <b>y
-     * versión exacta</b> en el {@link FluxyTaskRegistry}.
-     *
-     * @param taskName nombre de la tarea a ejecutar
-     * @param version  versión exacta requerida
-     * @param request  contexto de ejecución con variables y referencias
-     * @return resultado de la ejecución
-     * @throws IllegalArgumentException si no existe una tarea con ese nombre y versión
-     */
     public TaskExecutionResultDto executeTask(String taskName, int version, ExecutionContextRequest request) {
         FluxyTask fluxyTask = taskRegistry.findByNameAndVersion(taskName, version)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Tarea no encontrada en el registro: '%s' v%d".formatted(taskName, version)));
 
-        ExecutionContext ctx = toExecutionContext(request);
-
+        ExecutionContext ctx = toSimpleExecutionContext(request);
         log.info("[Fluxy] Ejecutando tarea '{}' (v{}) a demanda.", taskName, version);
         TaskResult result = taskExecutorService.executeTask(fluxyTask, ctx);
 
         return new TaskExecutionResultDto(taskName, TaskStatus.FINISHED.name(), result.name());
     }
 
-    // ── Lógica interna ──────────────────────────────────────────────────────
+    // ── Query ────────────────────────────────────────────────────────────────
 
     /**
-     * Busca la siguiente tarea pendiente o en ejecución del step, resuelve
-     * la instancia viva del {@link FluxyTask} desde el registro y la ejecuta
-     * vía {@link TaskExecutorService}. Actualiza el estado en BD.
+     * Consulta el estado actual de una ejecucion.
      */
-    private void processStepInternal(FluxyStepEntity stepEntity, ExecutionContext ctx) {
-        List<StepTaskEntity> tasks = stepTaskRepository.findByStepOrderByTaskOrderAsc(stepEntity);
+    public FlowExecutionResultDto getExecution(UUID executionId) {
+        FluxyExecutionEntity entity = executionRepository.findById(executionId)
+                .orElseThrow(() -> new IllegalArgumentException("Ejecucion no encontrada: " + executionId));
+        return toFlowResult(entity);
+    }
 
-        StepTaskEntity currentTask = tasks.stream()
-                .filter(t -> t.getStatus() == TaskStatus.RUNNING)
+    // ── Internal ─────────────────────────────────────────────────────────────
+
+    private void processStepRecord(ExecutionStepRecordEntity stepRecord, ExecutionContext ctx) {
+        List<ExecutionTaskRecordEntity> taskRecords = taskRecordRepository
+                .findByExecutionStepRecord(stepRecord);
+
+        ExecutionTaskRecordEntity currentTask = taskRecords.stream()
+                .sorted(Comparator.comparing(tr -> tr.getStepTask().getTaskOrder()))
+                .filter(tr -> tr.getStatus() == TaskStatus.RUNNING)
                 .findFirst()
-                .orElseGet(() -> tasks.stream()
-                        .filter(t -> t.getStatus() == TaskStatus.PENDING)
+                .orElseGet(() -> taskRecords.stream()
+                        .sorted(Comparator.comparing(tr -> tr.getStepTask().getTaskOrder()))
+                        .filter(tr -> tr.getStatus() == TaskStatus.PENDING)
                         .findFirst()
                         .orElseThrow(() -> new IllegalStateException(
-                                "No hay tareas pendientes en el step: " + stepEntity.getName())));
+                                "No hay tareas pendientes en el step: " +
+                                stepRecord.getFlowStep().getStep().getName())));
 
-        String taskName = currentTask.getTask().getName();
-        int taskVersion = currentTask.getTask().getVersion();
+        String taskName = currentTask.getStepTask().getTask().getName();
+        int taskVersion = currentTask.getStepTask().getTask().getVersion();
         FluxyTask fluxyTask = taskRegistry.findByNameAndVersion(taskName, taskVersion)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Tarea '%s' v%d no encontrada en el registro. ".formatted(taskName, taskVersion) +
-                        "Asegúrese de que el bean @Task esté en el contexto de Spring con la versión correcta."));
+                        "Asegurese de que el bean @Task este en el contexto de Spring con la version correcta."));
 
         currentTask.setStatus(TaskStatus.RUNNING);
-        stepTaskRepository.save(currentTask);
+        taskRecordRepository.save(currentTask);
 
         log.debug("[Fluxy] Ejecutando tarea '{}' (orden={}) del step '{}'.",
-                taskName, currentTask.getTaskOrder(), stepEntity.getName());
+                taskName, currentTask.getStepTask().getTaskOrder(),
+                stepRecord.getFlowStep().getStep().getName());
 
         TaskResult result = taskExecutorService.executeTask(fluxyTask, ctx);
 
         currentTask.setResult(result);
         currentTask.setStatus(TaskStatus.FINISHED);
-        stepTaskRepository.save(currentTask);
+        taskRecordRepository.save(currentTask);
 
         log.debug("[Fluxy] Tarea '{}' finalizada con resultado: {}", taskName, result);
     }
 
-    // ── Conversiones ────────────────────────────────────────────────────────
+    // ── Idempotency ──────────────────────────────────────────────────────────
 
-    private ExecutionContext toExecutionContext(ExecutionContextRequest request) {
+    private String computeIdempotencyKey(ExecutionContextRequest request) {
+        String input = request.references().stream()
+                .sorted(Comparator.comparing(r -> r.type()))
+                .map(r -> r.type() + "=" + r.value())
+                .reduce((a, b) -> a + ";" + b)
+                .orElse("");
+
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hash = digest.digest(input.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hash);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("SHA-256 no disponible", e);
+        }
+    }
+
+    // ── Conversions ──────────────────────────────────────────────────────────
+
+    private ExecutionContext toExecutionContext(FluxyExecutionEntity entity, ExecutionContextRequest request) {
+        ExecutionContextEntity ctxEntity = entity.getContext();
+        ExecutionContext ctx = new ExecutionContext(ctxEntity.getType(), ctxEntity.getVersion());
+
+        // Cargar variables y referencias persistidas
+        for (var v : ctxEntity.getVariables()) {
+            ctx.addParameter(v.getName(), v.getValue());
+        }
+        for (var r : ctxEntity.getReferences()) {
+            ctx.addReference(r.getRefType(), r.getValue());
+        }
+
+        // Inyectar variables adicionales del request (si las hay)
+        if (request != null && request.variables() != null) {
+            request.variables().forEach(v -> ctx.addParameter(v.name(), v.value()));
+        }
+        return ctx;
+    }
+
+    private ExecutionContext toSimpleExecutionContext(ExecutionContextRequest request) {
         ExecutionContext ctx = new ExecutionContext(
                 request != null && request.type() != null ? request.type() : "default",
-                request != null && request.version() != null ? request.version() : "1.0"
-        );
+                request != null && request.version() != null ? request.version() : "1.0");
         if (request != null && request.variables() != null) {
             request.variables().forEach(v -> ctx.addParameter(v.name(), v.value()));
         }
@@ -303,41 +454,38 @@ public class FluxyExecutionService {
         return ctx;
     }
 
-    private FlowExecutionResultDto toFlowResult(FluxyFlowEntity entity, List<FlowStepEntity> steps) {
-        List<FlowStepExecutionDto> stepDtos = steps.stream()
-                .map(fs -> {
-                    List<StepTaskEntity> tasks = stepTaskRepository
-                            .findByStepOrderByTaskOrderAsc(fs.getStep());
-                    List<TaskExecutionDto> taskDtos = tasks.stream()
-                            .map(this::toTaskExecutionDto)
+    private FlowExecutionResultDto toFlowResult(FluxyExecutionEntity entity) {
+        List<ExecutionStepRecordEntity> stepRecords =
+                stepRecordRepository.findByExecutionOrderByFlowStepStepOrderAsc(entity);
+
+        List<FlowStepExecutionDto> stepDtos = stepRecords.stream()
+                .map(sr -> {
+                    List<ExecutionTaskRecordEntity> taskRecs =
+                            taskRecordRepository.findByExecutionStepRecord(sr);
+                    List<TaskExecutionDto> taskDtos = taskRecs.stream()
+                            .sorted(Comparator.comparing(tr -> tr.getStepTask().getTaskOrder()))
+                            .map(tr -> new TaskExecutionDto(
+                                    tr.getStepTask().getTask().getName(),
+                                    tr.getStepTask().getTaskOrder(),
+                                    tr.getStatus() != null ? tr.getStatus().name() : null,
+                                    tr.getResult() != null ? tr.getResult().name() : null))
                             .toList();
                     return new FlowStepExecutionDto(
-                            fs.getStep().getId(),
-                            fs.getStep().getName(),
-                            fs.getStepOrder(),
-                            fs.getStepStatus() != null ? fs.getStepStatus().name() : null,
-                            taskDtos
-                    );
+                            sr.getFlowStep().getStep().getId(),
+                            sr.getFlowStep().getStep().getName(),
+                            sr.getFlowStep().getStepOrder(),
+                            sr.getStepStatus() != null ? sr.getStepStatus().name() : null,
+                            taskDtos);
                 })
                 .toList();
+
         return new FlowExecutionResultDto(
-                entity.getId(), entity.getName(), entity.getType(), stepDtos);
-    }
-
-    private StepExecutionResultDto toStepResult(FluxyStepEntity entity, List<StepTaskEntity> tasks) {
-        List<TaskExecutionDto> taskDtos = tasks.stream()
-                .map(this::toTaskExecutionDto)
-                .toList();
-        return new StepExecutionResultDto(entity.getId(), entity.getName(), taskDtos);
-    }
-
-    private TaskExecutionDto toTaskExecutionDto(StepTaskEntity st) {
-        return new TaskExecutionDto(
-                st.getTask().getName(),
-                st.getTaskOrder(),
-                st.getStatus() != null ? st.getStatus().name() : null,
-                st.getResult() != null ? st.getResult().name() : null
-        );
+                entity.getId(),
+                entity.getStatus() != null ? entity.getStatus().name() : null,
+                entity.getFlow().getId(),
+                entity.getFlow().getName(),
+                entity.getFlow().getType(),
+                stepDtos);
     }
 }
 

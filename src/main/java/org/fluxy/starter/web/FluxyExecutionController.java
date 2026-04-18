@@ -12,19 +12,16 @@ import org.springframework.web.bind.annotation.*;
 import java.util.UUID;
 
 /**
- * Controlador REST para la ejecución de flows, steps y tasks de Fluxy.
+ * Controlador REST para la ejecucion de flows, steps y tasks de Fluxy.
  *
  * <p>Expone endpoints bajo {@code /fluxy/execution} para:</p>
  * <ul>
- *   <li>Inicializar la ejecución de un flow (resetear estados a PENDING)</li>
- *   <li>Procesar el siguiente step de un flow (ejecución step-by-step)</li>
- *   <li>Procesar un step específico a demanda</li>
- *   <li>Ejecutar una tarea específica a demanda por nombre</li>
+ *   <li>Inicializar una ejecucion de flow (con validacion de idempotencia)</li>
+ *   <li>Procesar el siguiente step de una ejecucion por executionId</li>
+ *   <li>Consultar el estado de una ejecucion</li>
+ *   <li>Procesar un step especifico a demanda</li>
+ *   <li>Ejecutar una tarea especifica a demanda por nombre</li>
  * </ul>
- *
- * <p>Todos los endpoints de flow y step admiten identificación por ID o por nombre.
- * Las ejecuciones de tareas se delegan al {@code TaskExecutorService} del core,
- * que publica eventos en el bus configurado (SPRING, SQS o RABBIT).</p>
  */
 @RestController
 @RequestMapping("/fluxy/execution")
@@ -33,50 +30,88 @@ public class FluxyExecutionController {
 
     private final FluxyExecutionService fluxyExecutionService;
 
-    // ── Flow — por ID ─────────────────────────────────────────────────────────
+    // ── Flow initialization — por ID ────────────────────────────────────────
 
     /**
      * POST /fluxy/execution/flows/{id}/initialize
-     * Inicializa un flow por ID.
+     * Inicializa una ejecucion de un flow por ID. El body es obligatorio
+     * y debe contener al menos una referencia. Si ya existe una ejecucion
+     * activa con las mismas referencias, retorna la existente (idempotente).
      */
     @PostMapping("/flows/{id}/initialize")
     public ResponseEntity<FlowExecutionResultDto> initializeFlow(
             @PathVariable UUID id,
-            @RequestBody(required = false) ExecutionContextRequest request) {
+            @RequestBody ExecutionContextRequest request) {
         FlowExecutionResultDto result = fluxyExecutionService.initializeFlow(id, request);
         return ResponseEntity.ok(result);
     }
 
-    /**
-     * POST /fluxy/execution/flows/{id}/process
-     * Procesa el siguiente step de un flow por ID.
-     */
-    @PostMapping("/flows/{id}/process")
-    public ResponseEntity<FlowExecutionResultDto> processFlow(
-            @PathVariable UUID id,
-            @RequestBody(required = false) ExecutionContextRequest request) {
-        FlowExecutionResultDto result = fluxyExecutionService.processFlow(id, request);
-        return ResponseEntity.ok(result);
-    }
-
-    // ── Flow — por nombre ─────────────────────────────────────────────────────
+    // ── Flow initialization — por nombre ────────────────────────────────────
 
     /**
      * POST /fluxy/execution/flows/name/{name}/initialize
-     * Inicializa un flow por nombre.
+     * Inicializa una ejecucion de un flow por nombre.
      */
     @PostMapping("/flows/name/{name}/initialize")
     public ResponseEntity<FlowExecutionResultDto> initializeFlowByName(
             @PathVariable String name,
-            @RequestBody(required = false) ExecutionContextRequest request) {
+            @RequestBody ExecutionContextRequest request) {
         FlowExecutionResultDto result = fluxyExecutionService.initializeFlowByName(name, request);
         return ResponseEntity.ok(result);
     }
 
+    // ── Execution processing — por executionId ──────────────────────────────
+
+    /**
+     * POST /fluxy/execution/executions/{executionId}/process
+     * Procesa el siguiente step de una ejecucion. Este es el endpoint
+     * principal: solo requiere el executionId para determinar el flow
+     * y contexto a utilizar.
+     */
+    @PostMapping("/executions/{executionId}/process")
+    public ResponseEntity<FlowExecutionResultDto> processExecution(
+            @PathVariable UUID executionId,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        FlowExecutionResultDto result = fluxyExecutionService.processExecution(executionId, request);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── Execution query ─────────────────────────────────────────────────────
+
+    /**
+     * GET /fluxy/execution/executions/{executionId}
+     * Consulta el estado actual de una ejecucion.
+     */
+    @GetMapping("/executions/{executionId}")
+    public ResponseEntity<FlowExecutionResultDto> getExecution(
+            @PathVariable UUID executionId) {
+        FlowExecutionResultDto result = fluxyExecutionService.getExecution(executionId);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── Flow processing — por ID (DEPRECATED) ──────────────────────────────
+
+    /**
+     * POST /fluxy/execution/flows/{id}/process
+     * @deprecated Usar {@code POST /fluxy/execution/executions/{executionId}/process}.
+     *             Este endpoint es ambiguo cuando hay multiples ejecuciones activas del mismo flow.
+     */
+    @Deprecated(forRemoval = true)
+    @PostMapping("/flows/{id}/process")
+    public ResponseEntity<FlowExecutionResultDto> processFlow(
+            @PathVariable UUID id,
+            @RequestBody(required = false) ExecutionContextRequest request) {
+        FlowExecutionResultDto result = fluxyExecutionService.processExecution(id, request);
+        return ResponseEntity.ok(result);
+    }
+
+    // ── Flow processing — por nombre (DEPRECATED) ──────────────────────────
+
     /**
      * POST /fluxy/execution/flows/name/{name}/process
-     * Procesa el siguiente step de un flow por nombre.
+     * @deprecated Usar {@code POST /fluxy/execution/executions/{executionId}/process}.
      */
+    @Deprecated(forRemoval = true)
     @PostMapping("/flows/name/{name}/process")
     public ResponseEntity<FlowExecutionResultDto> processFlowByName(
             @PathVariable String name,
@@ -89,7 +124,7 @@ public class FluxyExecutionController {
 
     /**
      * POST /fluxy/execution/steps/{id}/process
-     * Procesa un step por ID.
+     * Procesa un step por ID (fuera del contexto de una ejecucion).
      */
     @PostMapping("/steps/{id}/process")
     public ResponseEntity<StepExecutionResultDto> processStep(
@@ -117,8 +152,7 @@ public class FluxyExecutionController {
 
     /**
      * POST /fluxy/execution/tasks/{name}/execute
-     * Ejecuta una tarea por nombre. Si existen varias versiones con el mismo
-     * nombre, se utiliza la de <b>mayor versión</b> disponible en el registro.
+     * Ejecuta una tarea por nombre (mayor version disponible).
      */
     @PostMapping("/tasks/{name}/execute")
     public ResponseEntity<TaskExecutionResultDto> executeTask(
@@ -128,11 +162,11 @@ public class FluxyExecutionController {
         return ResponseEntity.ok(result);
     }
 
-    // ── Task — por nombre y versión ────────────────────────────────────────────
+    // ── Task — por nombre y version ────────────────────────────────────────────
 
     /**
      * POST /fluxy/execution/tasks/{name}/v/{version}/execute
-     * Ejecuta una tarea por nombre y versión exacta.
+     * Ejecuta una tarea por nombre y version exacta.
      */
     @PostMapping("/tasks/{name}/v/{version}/execute")
     public ResponseEntity<TaskExecutionResultDto> executeTaskVersioned(
