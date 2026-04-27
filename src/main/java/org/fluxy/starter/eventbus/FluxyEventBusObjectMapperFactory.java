@@ -5,10 +5,12 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.annotation.JsonDeserialize;
 import tools.jackson.databind.json.JsonMapper;
 import org.fluxy.core.model.ExecutionContext;
 import org.fluxy.core.model.Reference;
 import org.fluxy.core.model.Variable;
+import org.fluxy.starter.support.FluxyEventContext;
 
 /**
  * Factory que produce un {@link ObjectMapper} de Jackson configurado con los
@@ -28,7 +30,8 @@ public final class FluxyEventBusObjectMapperFactory {
      * Crea un {@link ObjectMapper} con mixins registrados para:
      * <ul>
      *   <li>{@link org.fluxy.core.model.FluxyEvent} — constructor {@code (source, payload, context)}</li>
-     *   <li>{@link ExecutionContext} — constructor {@code (type, version)}</li>
+     *   <li>{@link ExecutionContext} — deserializado como {@link org.fluxy.starter.support.FluxyEventContext}
+     *       para resolver la restricción de Jackson de no poder instanciar clases abstractas.</li>
      *   <li>{@link Variable} — constructor {@code (name, value)}</li>
      *   <li>{@link Reference} — constructor {@code (type, value)}</li>
      * </ul>
@@ -54,13 +57,9 @@ public final class FluxyEventBusObjectMapperFactory {
                 @JsonProperty("context") ExecutionContext context) {}
     }
 
+    @JsonDeserialize(as = FluxyEventContext.class)
     @JsonIgnoreProperties(ignoreUnknown = true)
-    abstract static class ExecutionContextMixin {
-        @JsonCreator
-        ExecutionContextMixin(
-                @JsonProperty("type") String type,
-                @JsonProperty("version") String version) {}
-    }
+    abstract static class ExecutionContextMixin {}
 
     @JsonIgnoreProperties(ignoreUnknown = true)
     abstract static class VariableMixin {

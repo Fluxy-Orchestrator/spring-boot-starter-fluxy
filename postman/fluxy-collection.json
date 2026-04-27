@@ -740,7 +740,11 @@
                   "            pm.expect(task.result).to.be.null;",
                   "        });",
                   "    });",
-                  "});"
+                  "});",
+                  "",
+                  "var jsonData = pm.response.json();",
+                  "pm.environment.set('executionId', jsonData.executionId);",
+                  "console.log('✓ executionId guardado:', jsonData.executionId);"
                 ]
               }
             }
@@ -795,9 +799,9 @@
               "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"cliente@example.com\" },\n    { \"name\": \"nombre\", \"value\": \"Juan Pérez\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/fluxy/execution/flows/{{flowPedidoId}}/process",
+              "raw": "{{baseUrl}}/fluxy/execution/executions/{{executionId}}/process",
               "host": ["{{baseUrl}}"],
-              "path": ["fluxy", "execution", "flows", "{{flowPedidoId}}", "process"]
+              "path": ["fluxy", "execution", "executions", "{{executionId}}", "process"]
             }
           }
         },
@@ -832,9 +836,9 @@
               "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"facturaId\", \"value\": \"FAC-2026-001\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/fluxy/execution/flows/{{flowPedidoId}}/process",
+              "raw": "{{baseUrl}}/fluxy/execution/executions/{{executionId}}/process",
               "host": ["{{baseUrl}}"],
-              "path": ["fluxy", "execution", "flows", "{{flowPedidoId}}", "process"]
+              "path": ["fluxy", "execution", "executions", "{{executionId}}", "process"]
             }
           }
         },
@@ -870,9 +874,9 @@
               "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"productoId\", \"value\": \"PROD-500\" },\n    { \"name\": \"cantidad\", \"value\": \"3\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
             },
             "url": {
-              "raw": "{{baseUrl}}/fluxy/execution/flows/{{flowPedidoId}}/process",
+              "raw": "{{baseUrl}}/fluxy/execution/executions/{{executionId}}/process",
               "host": ["{{baseUrl}}"],
-              "path": ["fluxy", "execution", "flows", "{{flowPedidoId}}", "process"]
+              "path": ["fluxy", "execution", "executions", "{{executionId}}", "process"]
             }
           }
         },
@@ -1377,42 +1381,6 @@
               "raw": "{{baseUrl}}/fluxy/execution/flows/name/flow-pedido/initialize",
               "host": ["{{baseUrl}}"],
               "path": ["fluxy", "execution", "flows", "name", "flow-pedido", "initialize"]
-            }
-          }
-        },
-        {
-          "name": "Procesar flow-pedido (por nombre)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "type": "text/javascript",
-                "exec": [
-                  "pm.test('Status 200 OK', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});",
-                  "",
-                  "pm.test('Flow procesado por nombre', function () {",
-                  "    var jsonData = pm.response.json();",
-                  "    pm.expect(jsonData.flowName).to.eql('flow-pedido');",
-                  "});"
-                ]
-              }
-            }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              { "key": "Content-Type", "value": "application/json" }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"type\": \"pedido\",\n  \"version\": \"1.0\",\n  \"variables\": [\n    { \"name\": \"email\", \"value\": \"cliente@example.com\" }\n  ],\n  \"references\": [\n    { \"type\": \"orderId\", \"value\": \"ORD-2026-001\" }\n  ]\n}"
-            },
-            "url": {
-              "raw": "{{baseUrl}}/fluxy/execution/flows/name/flow-pedido/process",
-              "host": ["{{baseUrl}}"],
-              "path": ["fluxy", "execution", "flows", "name", "flow-pedido", "process"]
             }
           }
         },

@@ -9,6 +9,7 @@ import org.fluxy.core.model.StepStatus;
 import org.fluxy.core.model.TaskResult;
 import org.fluxy.core.model.TaskStatus;
 import org.fluxy.core.service.TaskExecutorService;
+import org.fluxy.starter.support.ExecutionContextProxy;
 import org.fluxy.spring.persistence.entity.ExecutionContextEntity;
 import org.fluxy.spring.persistence.entity.ExecutionStepRecordEntity;
 import org.fluxy.spring.persistence.entity.ExecutionTaskRecordEntity;
@@ -34,6 +35,7 @@ import org.fluxy.starter.dto.StepExecutionResultDto;
 import org.fluxy.starter.dto.TaskExecutionDto;
 import org.fluxy.starter.dto.TaskExecutionResultDto;
 import org.fluxy.starter.registration.FluxyTaskRegistry;
+import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -67,6 +69,7 @@ public class FluxyExecutionService {
     private final ExecutionTaskRecordRepository taskRecordRepository;
     private final FluxyTaskRegistry taskRegistry;
     private final TaskExecutorService taskExecutorService;
+    private final ObjectMapper objectMapper;
 
     // ── Flow initialization ──────────────────────────────────────────────────
 
@@ -253,38 +256,6 @@ public class FluxyExecutionService {
         return toFlowResult(executionEntity);
     }
 
-    /**
-     * @deprecated Usar {@link #processExecution(UUID, ExecutionContextRequest)} con el executionId directamente.
-     */
-    @Deprecated(forRemoval = true)
-    public FlowExecutionResultDto processFlow(UUID flowId, ExecutionContextRequest request) {
-        FluxyFlowEntity flowEntity = flowRepository.findById(flowId)
-                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowId));
-
-        // Buscar la unica ejecucion activa del flow (ambiguo si hay multiples)
-        List<FluxyExecutionEntity> active = executionRepository.findByFlow(flowEntity).stream()
-                .filter(e -> e.getStatus() != ExecutionStatus.FINISHED)
-                .toList();
-        if (active.isEmpty()) {
-            throw new IllegalStateException("No hay ejecuciones activas para el flow: " + flowId);
-        }
-        if (active.size() > 1) {
-            throw new IllegalStateException(
-                    "Hay multiples ejecuciones activas para el flow '%s'. Use el endpoint /executions/{executionId}/process."
-                            .formatted(flowEntity.getName()));
-        }
-        return processExecution(active.getFirst().getId(), request);
-    }
-
-    /**
-     * @deprecated Usar {@link #processExecution(UUID, ExecutionContextRequest)} con el executionId directamente.
-     */
-    @Deprecated(forRemoval = true)
-    public FlowExecutionResultDto processFlowByName(String flowName, ExecutionContextRequest request) {
-        FluxyFlowEntity flowEntity = flowRepository.findByName(flowName)
-                .orElseThrow(() -> new IllegalArgumentException("Flow no encontrado: " + flowName));
-        return processFlow(flowEntity.getId(), request);
-    }
 
     // ── Step execution (standalone) ──────────────────────────────────────────
 
@@ -424,7 +395,7 @@ public class FluxyExecutionService {
 
     private ExecutionContext toExecutionContext(FluxyExecutionEntity entity, ExecutionContextRequest request) {
         ExecutionContextEntity ctxEntity = entity.getContext();
-        ExecutionContext ctx = new ExecutionContext(ctxEntity.getType(), ctxEntity.getVersion());
+        ExecutionContextProxy ctx = new ExecutionContextProxy(ctxEntity.getType(), ctxEntity.getVersion(), objectMapper);
 
         // Cargar variables y referencias persistidas
         for (var v : ctxEntity.getVariables()) {
@@ -442,9 +413,10 @@ public class FluxyExecutionService {
     }
 
     private ExecutionContext toSimpleExecutionContext(ExecutionContextRequest request) {
-        ExecutionContext ctx = new ExecutionContext(
+        ExecutionContextProxy ctx = new ExecutionContextProxy(
                 request != null && request.type() != null ? request.type() : "default",
-                request != null && request.version() != null ? request.version() : "1.0");
+                request != null && request.version() != null ? request.version() : "1.0",
+                objectMapper);
         if (request != null && request.variables() != null) {
             request.variables().forEach(v -> ctx.addParameter(v.name(), v.value()));
         }

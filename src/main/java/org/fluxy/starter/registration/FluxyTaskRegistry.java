@@ -36,22 +36,6 @@ public class FluxyTaskRegistry {
 
     // ── Búsqueda por nombre ──────────────────────────────────────────────────
 
-    /**
-     * Busca una tarea por su campo {@code name} (el valor que retorna {@code task.getName()}).
-     * Si existen varias versiones con el mismo nombre, devuelve la primera encontrada
-     * (orden indeterminado). Prefiera {@link #findLatestByName(String)} o
-     * {@link #findByNameAndVersion(String, int)} para un resultado determinista.
-     *
-     * @param name nombre de la tarea (atributo {@code name()} de la anotación {@code @Task})
-     * @deprecated Usar {@link #findLatestByName(String)} o
-     *             {@link #findByNameAndVersion(String, int)} en su lugar.
-     */
-    @Deprecated(forRemoval = true)
-    public Optional<FluxyTask> findByName(String name) {
-        return getAll().values().stream()
-                .filter(task -> name.equals(task.getName()))
-                .findFirst();
-    }
 
     /**
      * Busca una tarea por nombre y devuelve la versión más alta registrada

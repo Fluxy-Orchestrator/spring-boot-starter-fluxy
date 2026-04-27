@@ -28,6 +28,7 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.DispatcherServlet;
+import tools.jackson.databind.ObjectMapper;
 
 /**
  * Configura los controladores REST de Fluxy de forma condicional.
@@ -105,7 +106,8 @@ public class FluxyWebAutoConfiguration {
             ExecutionStepRecordRepository executionStepRecordRepository,
             ExecutionTaskRecordRepository executionTaskRecordRepository,
             FluxyTaskRegistry fluxyTaskRegistry,
-            TaskExecutorService taskExecutorService) {
+            TaskExecutorService taskExecutorService,
+            ObjectMapper objectMapper) {
         return new FluxyExecutionService(
                 fluxyFlowRepository,
                 flowStepRepository,
@@ -116,7 +118,8 @@ public class FluxyWebAutoConfiguration {
                 executionStepRecordRepository,
                 executionTaskRecordRepository,
                 fluxyTaskRegistry,
-                taskExecutorService);
+                taskExecutorService,
+                objectMapper);
     }
 
     @Bean

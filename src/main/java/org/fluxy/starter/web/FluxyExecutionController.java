@@ -89,36 +89,6 @@ public class FluxyExecutionController {
         return ResponseEntity.ok(result);
     }
 
-    // ── Flow processing — por ID (DEPRECATED) ──────────────────────────────
-
-    /**
-     * POST /fluxy/execution/flows/{id}/process
-     * @deprecated Usar {@code POST /fluxy/execution/executions/{executionId}/process}.
-     *             Este endpoint es ambiguo cuando hay multiples ejecuciones activas del mismo flow.
-     */
-    @Deprecated(forRemoval = true)
-    @PostMapping("/flows/{id}/process")
-    public ResponseEntity<FlowExecutionResultDto> processFlow(
-            @PathVariable UUID id,
-            @RequestBody(required = false) ExecutionContextRequest request) {
-        FlowExecutionResultDto result = fluxyExecutionService.processExecution(id, request);
-        return ResponseEntity.ok(result);
-    }
-
-    // ── Flow processing — por nombre (DEPRECATED) ──────────────────────────
-
-    /**
-     * POST /fluxy/execution/flows/name/{name}/process
-     * @deprecated Usar {@code POST /fluxy/execution/executions/{executionId}/process}.
-     */
-    @Deprecated(forRemoval = true)
-    @PostMapping("/flows/name/{name}/process")
-    public ResponseEntity<FlowExecutionResultDto> processFlowByName(
-            @PathVariable String name,
-            @RequestBody(required = false) ExecutionContextRequest request) {
-        FlowExecutionResultDto result = fluxyExecutionService.processFlowByName(name, request);
-        return ResponseEntity.ok(result);
-    }
 
     // ── Step — por ID ─────────────────────────────────────────────────────────
 
